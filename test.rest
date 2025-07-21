@@ -1,0 +1,6 @@
+POST http://localhost:6000/transform_badminton_court
+content-type: application/json
+
+{
+  "src_points": {}
+}
