@@ -1,1 +1,5 @@
 received_camera_frames
+__pycache__
+prediction
+ckpts
+*.mp4

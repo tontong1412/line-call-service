@@ -6,15 +6,16 @@ import os
 import time
 import cv2  # For OpenCV processing
 import numpy as np  # For numerical operations with OpenCV
+from tracknetv3.predict import track_ball_position
 
 # --- Configuration ---
 WEBSOCKET_HOST = "0.0.0.0"  # Listen on all available interfaces
 WEBSOCKET_PORT = 8765
-SAVE_RECEIVED_IMAGES = True  # Set to True to save images to disk
+SAVE_RECEIVED_IMAGES = False  # Set to True to save images to disk
 SAVE_DIR = "received_camera_frames"
-DISPLAY_FRAMES_OPENCV = True  # Set to True to display frames using OpenCV
+DISPLAY_FRAMES_OPENCV = False  # Set to True to display frames using OpenCV
 APPLY_CV_PROCESSING = (
-    True  # Apply a simple OpenCV filter if DISPLAY_FRAMES_OPENCV is True
+    False  # Apply a simple OpenCV filter if DISPLAY_FRAMES_OPENCV is True
 )
 
 # Ensure save directory exists
@@ -31,6 +32,7 @@ async def image_stream_handler(websocket):
 
     # Variables to store incoming data
     current_metadata = None
+    frame_list = []
 
     try:
         async for message in websocket:
@@ -53,10 +55,32 @@ async def image_stream_handler(websocket):
                     width = current_metadata.get("width", "N/A")
                     height = current_metadata.get("height", "N/A")
                     size_bytes = len(message)
+                    total_frame = current_metadata.get("total_frame", "N/A")
 
                     print(
-                        f"[{client_address}] Frame {frame_number} (W:{width}, H:{height}, Size:{size_bytes} bytes)"
+                        f"[{client_address}] Frame {frame_number}/{total_frame-1} (W:{width}, H:{height}, Size:{size_bytes} bytes)"
                     )
+
+                    np_array = np.frombuffer(message, np.uint8)
+                    image_array = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+
+                    frame_list.append(image_array)
+
+                    if len(frame_list) == total_frame:
+                        print("start processing")
+                        try:
+                            track_ball_position(
+                                frame_list,
+                                width,
+                                height,
+                                "test_function",
+                                batch_size=8,
+                            )
+                            print("done tracking")
+                            await websocket.send("result")
+                        except Exception as e:
+                            print(e)
+                            await websocket.send("result")
 
                     # --- Process the JPEG image ---
                     try:
@@ -131,8 +155,6 @@ async def image_stream_handler(websocket):
 
                         # Reset metadata for the next frame
                         current_metadata = None
-
-                        await websocket.send("result")
 
                     except Exception as e:
                         print(
