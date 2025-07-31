@@ -263,8 +263,23 @@ def draw_traj(img, traj, radius=3, color="red"):
     return img
 
 
+def draw_court(img, court_coord, color=(200, 0, 0), line_thickness=2):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = Image.fromarray(img)
+
+    for line_name, points in court_coord.items():
+        if len(points) == 2:
+            start_point = (int(points[0][0]), int(points[0][1]))
+            end_point = (int(points[1][0]), int(points[1][1]))
+            img = cv2.line(np.array(img), start_point, end_point, color, line_thickness)
+        else:
+            print(f"Warning: Skipping {line_name} as it does not have two points.")
+    img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    return img
+
+
 def write_pred_video_from_frame(
-    frame_list, w, h, pred_dict, save_file, traj_len=8, label_df=None
+    frame_list, w, h, pred_dict, save_file, traj_len=8, label_df=None, court_coord={}
 ):
     """Write a video with prediction result.
 
@@ -333,6 +348,8 @@ def write_pred_video_from_frame(
 
         # Draw prediction trajectory
         frame = draw_traj(frame, pred_queue, color="yellow")
+
+        frame = draw_court(frame, court_coord)
 
         out.write(frame)
         i += 1

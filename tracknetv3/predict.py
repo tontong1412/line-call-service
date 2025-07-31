@@ -77,7 +77,7 @@ def predict(indices, y_pred=None, c_pred=None, img_scaler=(1, 1)):
     return pred_dict
 
 
-def track_ball_position(frame_list, w, h, video_name, batch_size):
+def track_ball_position(frame_list, w, h, video_name, batch_size, court_coord):
     num_workers = batch_size if batch_size <= 16 else 16
     save_dir = "prediction"
     out_csv_file = os.path.join(save_dir, f"{video_name}_ball.csv")
@@ -303,7 +303,15 @@ def track_ball_position(frame_list, w, h, video_name, batch_size):
 
     print(pred_dict)
 
+    print(court_coord)
+
     # Write video with predicted coordinates
     write_pred_video_from_frame(
-        frame_list, w, h, pred_dict, save_file=out_video_file, traj_len=traj_len
+        frame_list,
+        w,
+        h,
+        pred_dict,
+        save_file=out_video_file,
+        traj_len=traj_len,
+        court_coord=court_coord,
     )

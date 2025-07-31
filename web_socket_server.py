@@ -33,6 +33,7 @@ async def image_stream_handler(websocket):
     # Variables to store incoming data
     current_metadata = None
     frame_list = []
+    court_coord = {}
 
     try:
         async for message in websocket:
@@ -40,7 +41,9 @@ async def image_stream_handler(websocket):
                 # Assume string messages are metadata (JSON)
                 try:
                     current_metadata = json.loads(message)
-                    # print(f"Received metadata from {client_address}: {current_metadata}")
+                    # print(
+                    #     f"Received metadata from {client_address}: {current_metadata}"
+                    # )
                 except json.JSONDecodeError:
                     print(
                         f"Received malformed JSON metadata from {client_address}: {message}"
@@ -69,12 +72,14 @@ async def image_stream_handler(websocket):
                     if len(frame_list) == total_frame:
                         print("start processing")
                         try:
+                            court_coord = current_metadata.get("court_coord", {})
                             track_ball_position(
                                 frame_list,
                                 width,
                                 height,
                                 "test_function",
                                 batch_size=8,
+                                court_coord=court_coord,
                             )
                             print("done tracking")
                             await websocket.send("result")
