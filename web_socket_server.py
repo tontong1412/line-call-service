@@ -73,6 +73,7 @@ async def image_stream_handler(websocket):
                         print("start processing")
                         try:
                             court_coord = current_metadata.get("court_coord", {})
+                            court_corners = current_metadata.get("court_corners", {})
                             track_ball_position(
                                 frame_list,
                                 width,
@@ -80,6 +81,7 @@ async def image_stream_handler(websocket):
                                 "test_function",
                                 batch_size=8,
                                 court_coord=court_coord,
+                                court_corners=court_corners,
                             )
                             print("done tracking")
                             await websocket.send("result")

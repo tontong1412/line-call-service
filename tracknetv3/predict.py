@@ -77,7 +77,15 @@ def predict(indices, y_pred=None, c_pred=None, img_scaler=(1, 1)):
     return pred_dict
 
 
-def track_ball_position(frame_list, w, h, video_name, batch_size, court_coord):
+def track_ball_position(
+    frame_list,
+    w,
+    h,
+    video_name,
+    batch_size,
+    court_coord,
+    court_corners,
+):
     num_workers = batch_size if batch_size <= 16 else 16
     save_dir = "prediction"
     out_csv_file = os.path.join(save_dir, f"{video_name}_ball.csv")

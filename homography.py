@@ -1,11 +1,6 @@
 import cv2
 import numpy as np
-from flask import Flask, request, jsonify
-import base64
 import json
-
-# Initialize the Flask application
-app = Flask(__name__)
 
 
 # --- Helper Function to Parse Points ---
@@ -152,138 +147,44 @@ def generate_badminton_court_lines_in_dst_space(width, height):
     return all_generated_points
 
 
-@app.route("/", methods=["GET"])
-def get():
-    return {"message": "Hello"}, 200
-
-
-# --- Homography Transformation Route ---
-@app.route("/transform_badminton_court", methods=["POST"])
-def transform_badminton_court():
-    """
-    Receives 4 source corner points and optionally an image (base64 encoded).
-    Returns the coordinates of all badminton court lines generated in the
-    destination space (bird's-eye view) AND transformed back into the
-    original source image plane.
-
-    Expects a JSON payload with 'src_points' (list of 4 [x,y] points)
-    and optionally 'image_data' (base64 string of the image).
-    Example:
-    {
-        "src_points": [[100,50],[500,80],[550,400],[80,380]],
-        "image_data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA..." (optional)
-    }
-
-    Returns:
-        JSON response containing:
-        - generated_court_lines_dst: Coordinates in the bird's-eye view.
-        - generated_court_lines_src: Coordinates transformed back to the source image plane.
-        - output_court_dimensions: Dimensions of the bird's-eye view court.
-        - homography_matrix: The calculated homography matrix.
-        - inverse_homography_matrix: The calculated inverse homography matrix.
-    """
-    data = request.get_json()
-    if not data or "src_points" not in data:
-        return (
-            jsonify(
-                {
-                    "error": "Missing 'src_points' parameter in request body. Please provide a list of 4 [x,y] points."
-                }
-            ),
-            400,
-        )
-
-    src_points_data = data["src_points"]
-    image_b64 = data.get("image_data")  # image_data is now optional
-
-    # Parse the source points
-    src_court_corners = parse_points(src_points_data)
-
-    if src_court_corners is None or src_court_corners.shape[0] != 4:
-        return (
-            jsonify(
-                {
-                    "error": "Invalid 'src_points' format or incorrect number of points. Expected a list of 4 [x,y] points."
-                }
-            ),
-            400,
-        )
-
-    # --- Image Decoding (optional, only if image_data is provided) ---
-    image = None
-    if image_b64:
-        try:
-            image_bytes = base64.b64decode(image_b64)
-            np_arr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-            if image is None:
-                print(
-                    "Warning: Could not decode optional image data. Proceeding without image."
-                )
-
-        except Exception as e:
-            print(
-                f"Warning: Error decoding optional image: {e}. Proceeding without image."
-            )
-
+def homography(src_points):
     # --- 1. Define Destination Points for the Full Court ---
     # Standard badminton court dimensions (example values in pixels)
     # A full badminton court is approx 13.4m x 6.1m (doubles)
     # We'll use a proportional pixel representation.
     # Let's define a court with width 610 pixels and height 1340 pixels for example.
-    court_width = 610
-    court_height = 1340
+
+    full_court_width = 610
+    full_court_height = 1340
+
+    video_height = 720
+    video_width = 1280
+
+    h_w_scale = full_court_height / full_court_width
+
+    court_height = 600
+    court_width = court_height / h_w_scale
+
+    x_offset = (video_width - court_width) // 2
+    y_offset = (video_height - court_height) // 2
 
     dst_court_corners = np.array(
         [
-            [0, court_height / 2],  # Top-left
-            [court_width, court_height / 2],  # Top-right
-            [court_width, court_height],  # Bottom-right
-            [0, court_height],  # Bottom-left
+            [0 + x_offset, (court_height / 2) + y_offset],  # Top-left
+            [court_width + x_offset, (court_height / 2) + y_offset],  # Top-right
+            [court_width + x_offset, court_height + y_offset],  # Bottom-right
+            [0 + x_offset, court_height + y_offset],  # Bottom-left
         ],
         dtype=np.float32,
     ).reshape(-1, 1, 2)
 
+    src_court_corners = parse_points(src_points)
+
     # --- 2. Calculate Homography ---
-    try:
-        H, _ = cv2.findHomography(src_court_corners, dst_court_corners, cv2.RANSAC, 5.0)
-        if H is None:
-            return (
-                jsonify(
-                    {
-                        "error": "Could not calculate homography matrix from provided corners. Points might be collinear or insufficient."
-                    }
-                ),
-                500,
-            )
+    H, _ = cv2.findHomography(src_court_corners, dst_court_corners, cv2.RANSAC, 5.0)
 
-        # Calculate the inverse homography matrix
-        H_inv = np.linalg.inv(H)
-
-    except cv2.error as e:
-        return (
-            jsonify({"error": f"OpenCV error during homography calculation: {e}"}),
-            500,
-        )
-    except np.linalg.LinAlgError as e:
-        return (
-            jsonify(
-                {
-                    "error": f"Linear algebra error (e.g., singular matrix) during inverse homography calculation: {e}"
-                }
-            ),
-            500,
-        )
-    except Exception as e:
-        return (
-            jsonify(
-                {
-                    "error": f"An unexpected error occurred during homography calculation: {e}"
-                }
-            ),
-            500,
-        )
+    # Calculate the inverse homography matrix
+    H_inv = np.linalg.inv(H)
 
     # --- 3. Generate All Court Lines in the Destination Space (Bird's-Eye View) ---
     generated_court_lines_dst = generate_badminton_court_lines_in_dst_space(
@@ -314,26 +215,29 @@ def transform_badminton_court():
         ).tolist()
 
     # --- 5. Return Generated Coordinates ---
-    return (
-        jsonify(
-            {
-                "message": "Badminton court line coordinates generated and transformed.",
-                "generated_court_lines_dst": rounded_generated_court_lines_dst,
-                "generated_court_lines_src": transformed_src_lines_coords,
-                "output_court_dimensions": {
-                    "width": court_width,
-                    "height": court_height,
-                },
-                "homography_matrix": np.round(H, 2).tolist(),
-                "inverse_homography_matrix": np.round(H_inv, 2).tolist(),
-            }
-        ),
-        200,
-    )
+    return {
+        "message": "Badminton court line coordinates generated and transformed.",
+        "generated_court_lines_dst": rounded_generated_court_lines_dst,
+        "generated_court_lines_src": transformed_src_lines_coords,
+        "output_court_dimensions": {
+            "width": court_width,
+            "height": court_height,
+        },
+        "homography_matrix": np.round(H, 2).tolist(),
+        "inverse_homography_matrix": np.round(H_inv, 2).tolist(),
+    }
 
 
 # --- Main execution block ---
 if __name__ == "__main__":
     # Run the Flask app in debug mode (for development)
     # In a production environment, use a production-ready WSGI server like Gunicorn.
-    app.run(debug=True, host="0.0.0.0", port=8080)
+    result = homography(
+        [
+            [443.4, 260.2],
+            [882.4, 226.0],
+            [1120.0, 555.1],
+            [266.9, 599.7],
+        ]
+    )
+    print(result)
