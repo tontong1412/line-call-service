@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from .test import predict_location, get_ensemble_weight, generate_inpaint_mask
 from .dataset import Shuttlecock_Trajectory_Dataset, Video_IterableDataset
 from .utils.general import *
+from .utils.line_judge import line_judge_decision
 
 
 def predict(indices, y_pred=None, c_pred=None, img_scaler=(1, 1)):
@@ -310,8 +311,9 @@ def track_ball_position(
     write_pred_csv(pred_dict, save_file=out_csv_file)
 
     print(pred_dict)
-
     print(court_coord)
+
+    decision = line_judge_decision(pred_dict, court_coord)
 
     # Write video with predicted coordinates
     write_pred_video_from_frame(
@@ -319,6 +321,7 @@ def track_ball_position(
         w,
         h,
         pred_dict,
+        decision,
         save_file=out_video_file,
         traj_len=traj_len,
         court_coord=court_coord,

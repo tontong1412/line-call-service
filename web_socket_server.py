@@ -7,6 +7,7 @@ import time
 import cv2  # For OpenCV processing
 import numpy as np  # For numerical operations with OpenCV
 from tracknetv3.predict import track_ball_position
+from datetime import datetime
 
 # --- Configuration ---
 WEBSOCKET_HOST = "0.0.0.0"  # Listen on all available interfaces
@@ -74,11 +75,12 @@ async def image_stream_handler(websocket):
                         try:
                             court_coord = current_metadata.get("court_coord", {})
                             court_corners = current_metadata.get("court_corners", {})
+                            filename = datetime.now().strftime("%m_%d_%Y_%H:%M:%S")
                             track_ball_position(
                                 frame_list,
                                 width,
                                 height,
-                                "test_function",
+                                filename,
                                 batch_size=8,
                                 court_coord=court_coord,
                                 court_corners=court_corners,
@@ -204,7 +206,12 @@ async def main():
     print(f"Applying CV processing: {APPLY_CV_PROCESSING}")
 
     # Start the server
-    async with websockets.serve(image_stream_handler, WEBSOCKET_HOST, WEBSOCKET_PORT):
+    async with websockets.serve(
+        image_stream_handler,
+        WEBSOCKET_HOST,
+        WEBSOCKET_PORT,
+        max_size=5 * 1024 * 1024,
+    ):
         await asyncio.Future()  # Run forever
 
 

@@ -279,7 +279,15 @@ def draw_court(img, court_coord, color=(200, 0, 0), line_thickness=2):
 
 
 def write_pred_video_from_frame(
-    frame_list, w, h, pred_dict, save_file, traj_len=8, label_df=None, court_coord={}
+    frame_list,
+    w,
+    h,
+    pred_dict,
+    decision,
+    save_file,
+    traj_len=8,
+    label_df=None,
+    court_coord={},
 ):
     """Write a video with prediction result.
 
@@ -350,6 +358,48 @@ def write_pred_video_from_frame(
         frame = draw_traj(frame, pred_queue, color="yellow")
 
         frame = draw_court(frame, court_coord)
+
+        # Draw ground hit point and decision
+        for row in decision.itertuples(index=True, name="Frame"):
+            # print(f"Frame: {row.Frame}, X: {row.x}, Y: {row.y}, y_div_1: {row.y_div_1}")
+            # print(f"Frame: {row.Frame}, i: {i}")
+            if row.Frame <= i:
+                # Define circle properties
+                circle_center = (
+                    int(row.X),
+                    int(row.Y),
+                )  # Center of the frame
+                circle_radius = 5
+                circle_color = (0, 0, 255)  # Red color in BGR format
+                circle_thickness = 5
+                cv2.circle(
+                    frame, circle_center, circle_radius, circle_color, circle_thickness
+                )
+
+                # Define text properties
+                text = row.decision
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1
+                text_color = (0, 0, 255)  # White color
+                text_thickness = 2
+
+                # Position the text slightly below and to the right of the circle
+                text_position = (
+                    circle_center[0] + circle_radius + 5,
+                    circle_center[1] + circle_radius - 15,
+                )
+
+                # Add the text to the frame
+                cv2.putText(
+                    frame,
+                    text,
+                    text_position,
+                    font,
+                    font_scale,
+                    text_color,
+                    text_thickness,
+                    cv2.LINE_AA,
+                )
 
         out.write(frame)
         i += 1
