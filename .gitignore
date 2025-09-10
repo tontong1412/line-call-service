@@ -3,3 +3,4 @@ __pycache__
 prediction
 ckpts
 *.mp4
+venv

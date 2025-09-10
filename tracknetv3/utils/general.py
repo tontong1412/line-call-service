@@ -6,6 +6,7 @@ import parse
 import shutil
 import numpy as np
 import pandas as pd
+import subprocess
 
 from collections import deque
 from PIL import Image, ImageDraw
@@ -306,7 +307,7 @@ def write_pred_video_from_frame(
         None
     """
     fps = 30
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
     # Read ground truth label if exists
     if label_df is not None:
@@ -405,6 +406,7 @@ def write_pred_video_from_frame(
         i += 1
 
     out.release()
+    reencode_video(save_file, save_file.replace(".mp4", "_reencode.mp4"))
 
 
 def write_pred_video(video_file, pred_dict, save_file, traj_len=8, label_df=None):
@@ -492,6 +494,31 @@ def write_pred_video(video_file, pred_dict, save_file, traj_len=8, label_df=None
 
     out.release()
     cap.release()
+    reencode_video(save_file, save_file.replace(".mp4", "_reencode.mp4"))
+
+def reencode_video(input_file, output_file):
+    """Re-encode video to ensure compatibility.
+
+    Args:
+        input_file (str): File path of the input video file
+        output_file (str): File path of the output video file
+
+    Returns:
+        None
+    """
+    # Construct the FFmpeg command
+    command = [
+        'ffmpeg',       # FFmpeg executable
+        '-i', input_file,  # Input file
+        output_file      # Output file
+    ]
+    
+    try:
+        # Run the command
+        subprocess.run(command, check=True)
+        print(f"Conversion complete: {output_file}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during conversion: {e}")
 
 
 def write_pred_csv(pred_dict, save_file, save_inpaint_mask=False):

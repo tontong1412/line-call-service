@@ -388,8 +388,7 @@ def line_judge_decision(pred_dict, court_coord):
     frame_at_ground_hit_with_decision["decision"] = frame_at_ground_hit_with_decision[
         "decision"
     ].map({True: "OUT", False: "IN"})
-    print("------")
-    print(frame_at_ground_hit_with_decision)
+
     return frame_at_ground_hit_with_decision
 
 
@@ -399,7 +398,7 @@ def find_ground_hit_frame(pred_dict):
     is_bounce_frames = features.loc[
         (abs(features["y_div_1"]) > 1e10) | (abs(features["y_div_2"]) > 1e10)
     ]
-    print(is_bounce_frames)
+    
     return is_bounce_frames
 
 
@@ -531,7 +530,6 @@ def visualize(point, court):
     )
     ax.add_patch(polygon_patch)
 
-    print(point)
 
     # Plot the test point
     ax.scatter(point[0], point[1], color="red", s=100, zorder=5)

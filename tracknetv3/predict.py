@@ -101,15 +101,15 @@ def track_ball_position(
         os.makedirs(save_dir)
 
     # Load model
-    tracknet_ckpt = torch.load(tracknet_file, map_location=torch.device("cpu"))
+    tracknet_ckpt = torch.load(tracknet_file)
     tracknet_seq_len = tracknet_ckpt["param_dict"]["seq_len"]
     bg_mode = tracknet_ckpt["param_dict"]["bg_mode"]
-    tracknet = get_model("TrackNet", tracknet_seq_len, bg_mode)
+    tracknet = get_model("TrackNet", tracknet_seq_len, bg_mode).cuda()
     tracknet.load_state_dict(tracknet_ckpt["model"])
 
-    inpaintnet_ckpt = torch.load(inpaintnet_file, map_location=torch.device("cpu"))
+    inpaintnet_ckpt = torch.load(inpaintnet_file)
     inpaintnet_seq_len = inpaintnet_ckpt["param_dict"]["seq_len"]
-    inpaintnet = get_model("InpaintNet")
+    inpaintnet = get_model("InpaintNet").cuda()
     inpaintnet.load_state_dict(inpaintnet_ckpt["model"])
 
     w_scaler, h_scaler = w / WIDTH, h / HEIGHT
@@ -157,7 +157,7 @@ def track_ball_position(
     weight = get_ensemble_weight(seq_len, eval_mode)
 
     for step, (i, x) in enumerate(tqdm(data_loader)):
-        x = x.float()
+        x = x.float().cuda()
         b_size, seq_len = i.shape[0], i.shape[1]
         with torch.no_grad():
             y_pred = tracknet(x).detach().cpu()
@@ -245,7 +245,7 @@ def track_ball_position(
         coor_pred, inpaint_mask = coor_pred.float(), inpaint_mask.float()
         b_size = i.shape[0]
         with torch.no_grad():
-            coor_inpaint = inpaintnet(coor_pred, inpaint_mask).detach().cpu()
+            coor_inpaint = inpaintnet(coor_pred.cuda(), inpaint_mask.cuda()).detach().cpu()
             coor_inpaint = coor_inpaint * inpaint_mask + coor_pred * (1 - inpaint_mask)
 
         # Thresholding
@@ -310,8 +310,6 @@ def track_ball_position(
     pred_dict = inpaint_pred_dict if inpaintnet is not None else tracknet_pred_dict
     write_pred_csv(pred_dict, save_file=out_csv_file)
 
-    print(pred_dict)
-    print(court_coord)
 
     decision = line_judge_decision(pred_dict, court_coord)
 
