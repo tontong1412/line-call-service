@@ -1,6 +1,10 @@
-POST http://localhost:6000/transform_badminton_court
+POST http://localhost:8080/transform_badminton_court
 content-type: application/json
 
 {
-  "src_points": {}
-}
+   "src_points": [[464,490],[824,493],[1192,667],[112,662]]
+ }
+
+# {
+#   "src_points": [[337,471],[945,472],[1037,680],[244,679]]
+# }

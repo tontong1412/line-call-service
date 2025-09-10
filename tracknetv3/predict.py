@@ -310,6 +310,8 @@ def track_ball_position(
     pred_dict = inpaint_pred_dict if inpaintnet is not None else tracknet_pred_dict
     write_pred_csv(pred_dict, save_file=out_csv_file)
 
+    print(court_coord)
+
 
     decision = line_judge_decision(pred_dict, court_coord)
 

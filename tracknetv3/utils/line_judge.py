@@ -372,9 +372,29 @@ test_court_coord = {
     ],
 }
 
+def ball_below_net_pole(dataframe, net_line):
+    """
+    Check if the ball is below the net pole.
+    """
+
+    net_pole_left = net_line[0]
+    net_pole_right = net_line[1]
+
+
+    slope = (net_pole_right[1] - net_pole_left[1]) / (net_pole_right[0] - net_pole_left[0])
+    x_pred, y_pred = dataframe["X"], dataframe["Y"]
+    y_on_net_pole = slope * (x_pred - net_pole_left[0]) + net_pole_left[1]
+
+    dataframe['y_on_net_pole'] = y_on_net_pole
+
+    filtered_df = dataframe[dataframe['Y'] > dataframe['y_on_net_pole']]
+
+    return filtered_df
+
+
 
 def line_judge_decision(pred_dict, court_coord):
-    frame_at_ground_hit = find_ground_hit_frame(pred_dict)
+    frame_at_ground_hit = find_ground_hit_frame(pred_dict,court_coord)
     frame_at_ground_hit_with_decision = pd.DataFrame(frame_at_ground_hit)
 
     frame_at_ground_hit_with_decision["decision"] = [
@@ -392,14 +412,38 @@ def line_judge_decision(pred_dict, court_coord):
     return frame_at_ground_hit_with_decision
 
 
-def find_ground_hit_frame(pred_dict):
+def find_ground_hit_frame(pred_dict, court_coord):
     features, num_frames = prepare_features(pred_dict)
-    # print(features)
-    is_bounce_frames = features.loc[
-        (abs(features["y_div_1"]) > 1e10) | (abs(features["y_div_2"]) > 1e10)
+    print('----------------------------------------')
+    print(features.loc[94:360,['Frame','X','Y','vy_1','vy_inv_1','vy_inv_2','ay_1','ay_inv_1','vx_1','ax_1',]])
+
+
+    # bounce_frames = features.loc[
+    #     (abs(features["y_div_1"]) > 1e10) 
+    #     | (abs(features["y_div_2"]) > 1e10)
+    #     # |features['vy']
+    # ]
+
+    threshold = 10  # Define a threshold for sharp acceleration change
+
+    bounce_frames = features.loc[
+        ((features['vy_1'] < 0) & (features['vy_1'].shift(-1) >= 0))   # falling → rising/stopping
+        # ((abs(features['ay_1'].shift(-1) - features['ay_1']) >= threshold)  | (abs(features['ay_1'].shift(1) - features['ay_1']) >= threshold))     # sharp acceleration change
     ]
+
+
+    print('----------------------------------------')
+    print(bounce_frames)
+
+    bounce_frames = ball_below_net_pole(
+        bounce_frames,
+        court_coord["net_line"],
+    )
+
+    print(bounce_frames)
+
     
-    return is_bounce_frames
+    return bounce_frames
 
 
 def is_point_outside_court_precise(point, court_lines):
@@ -414,7 +458,7 @@ def is_point_outside_court_precise(point, court_lines):
         court_lines["outer_boundary_bottom"][0],  # Bottom-left
     ]
 
-    # visualize(point, polygon_vertices)
+    visualize(point, polygon_vertices)
 
     # The Ray Casting algorithm returns true if inside, so we negate the result
     return not is_inside_polygon(point, polygon_vertices)
@@ -468,28 +512,26 @@ def prepare_features(pred_dict):
         labels["Frame"] = labels["frame"]
         labels["X"] = labels["x-coordinate"]
         labels["Y"] = labels["y-coordinate"]
-        labels["x_lag_{}".format(i)] = labels["x-coordinate"].shift(i)
-        labels["x_lag_inv_{}".format(i)] = labels["x-coordinate"].shift(-i)
-        labels["y_lag_{}".format(i)] = labels["y-coordinate"].shift(i)
-        labels["y_lag_inv_{}".format(i)] = labels["y-coordinate"].shift(-i)
-        labels["x_diff_{}".format(i)] = abs(
-            labels["x_lag_{}".format(i)] - labels["x-coordinate"]
-        )
-        labels["y_diff_{}".format(i)] = (
-            labels["y_lag_{}".format(i)] - labels["y-coordinate"]
-        )
-        labels["x_diff_inv_{}".format(i)] = abs(
-            labels["x_lag_inv_{}".format(i)] - labels["x-coordinate"]
-        )
-        labels["y_diff_inv_{}".format(i)] = (
-            labels["y_lag_inv_{}".format(i)] - labels["y-coordinate"]
-        )
-        labels["x_div_{}".format(i)] = abs(
-            labels["x_diff_{}".format(i)] / (labels["x_diff_inv_{}".format(i)] + eps)
-        )
-        labels["y_div_{}".format(i)] = labels["y_diff_{}".format(i)] / (
-            labels["y_diff_inv_{}".format(i)] + eps
-        )
+        labels["x_lag_{}".format(i)] = labels["x-coordinate"].shift(i) #previous frame
+        labels["x_lag_inv_{}".format(i)] = labels["x-coordinate"].shift(-i) #next frame
+        labels["y_lag_{}".format(i)] = labels["y-coordinate"].shift(i)#previous frame
+        labels["y_lag_inv_{}".format(i)] = labels["y-coordinate"].shift(-i) #next frame
+
+        labels["x_diff_{}".format(i)] = labels["x_lag_{}".format(i)] - labels["x-coordinate"]
+        labels["y_diff_{}".format(i)] = (labels["y_lag_{}".format(i)] - labels["y-coordinate"])
+        labels["x_diff_inv_{}".format(i)] = labels["x_lag_inv_{}".format(i)] - labels["x-coordinate"]
+        labels["y_diff_inv_{}".format(i)] = (labels["y_lag_inv_{}".format(i)] - labels["y-coordinate"])
+        labels["x_div_{}".format(i)] = labels["x_diff_{}".format(i)] / (labels["x_diff_inv_{}".format(i)] + eps)
+        labels["y_div_{}".format(i)] = labels["y_diff_{}".format(i)] / (labels["y_diff_inv_{}".format(i)] + eps)
+
+        labels['vx_{}'.format(i)] = labels['x_diff_{}'.format(i)] #velocity in x direction
+        labels['vy_{}'.format(i)] = labels['y_diff_{}'.format(i)] #velocity in y direction
+        labels['vy_inv_{}'.format(i)] = labels['y_diff_inv_{}'.format(i)] #velocity in y direction (next frame)
+
+        labels['ax_{}'.format(i)] = labels['vx_{}'.format(i)].shift(1) - labels['vx_{}'.format(i)] #acceleration in x direction
+        labels['ay_{}'.format(i)] = labels['vy_{}'.format(i)].shift(1) - labels['vy_{}'.format(i)] #acceleration in y direction
+        labels['ay_inv_{}'.format(i)] = labels['vy_inv_{}'.format(i)].shift(-1) - labels['vy_inv_{}'.format(i)] #acceleration in y direction (next frame)
+
 
     for i in range(1, num):
         labels = labels[labels["x_lag_{}".format(i)].notna()]
@@ -501,12 +543,18 @@ def prepare_features(pred_dict):
         + ["x_diff_inv_{}".format(i) for i in range(1, num)]
         + ["x_div_{}".format(i) for i in range(1, num)]
         + ["X"]
+        + ['vx_{}'.format(i) for i in range(1, num)]
+        + ['ax_{}'.format(i) for i in range(1, num)]
     )
     colnames_y = (
         ["y_diff_{}".format(i) for i in range(1, num)]
         + ["y_diff_inv_{}".format(i) for i in range(1, num)]
         + ["y_div_{}".format(i) for i in range(1, num)]
         + ["Y"]
+        + ['vy_{}'.format(i) for i in range(1, num)]
+        + ['ay_{}'.format(i) for i in range(1, num)]
+        + ['vy_inv_{}'.format(i) for i in range(1, num)]
+        + ['ay_inv_{}'.format(i) for i in range(1, num)]
     )
 
     colnames_general = ["Frame"]

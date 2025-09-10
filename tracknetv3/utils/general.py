@@ -377,6 +377,18 @@ def write_pred_video_from_frame(
                     frame, circle_center, circle_radius, circle_color, circle_thickness
                 )
 
+
+                circle_center_net = (
+                    int(row.X),
+                    int(row.y_on_net_pole),
+                )  # Center of the frame
+                circle_radius = 5
+                circle_color = (0, 255, 255)  # Red color in BGR format
+                circle_thickness = 5
+                cv2.circle(
+                    frame, circle_center_net, circle_radius, circle_color, circle_thickness
+                )
+
                 # Define text properties
                 text = row.decision
                 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -401,6 +413,25 @@ def write_pred_video_from_frame(
                     text_thickness,
                     cv2.LINE_AA,
                 )
+
+        # Position the text slightly below and to the right of the circle
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        text_color = (0, 0, 255)  # White color
+        text_thickness = 2
+        text_position = (80,80)
+
+        # Add the text to the frame
+        cv2.putText(
+            frame,
+            f'Frame: {i}',
+            text_position,
+            font,
+            font_scale,
+            text_color,
+            text_thickness,
+            cv2.LINE_AA,
+        )
 
         out.write(frame)
         i += 1

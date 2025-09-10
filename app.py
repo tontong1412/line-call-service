@@ -89,6 +89,7 @@ def generate_badminton_court_lines_in_dst_space(width, height):
     # 1.98m from net, so (1.98 / 13.4) * height
     short_service_y = (1.98 / 13.4) * height
     net_y = height / 2
+    lines["net_line"] = [[0, net_y], [width, net_y]]
     lines["short_service_line_top"] = [
         [0, net_y - short_service_y],
         [width, net_y - short_service_y],
@@ -312,6 +313,10 @@ def transform_badminton_court():
         rounded_generated_court_lines_dst[line_name] = np.round(
             np.array(line_coords_dst), 2
         ).tolist()
+
+    print(rounded_generated_court_lines_dst)
+    print('----------------------------------')
+    print(transformed_src_lines_coords)
 
     # --- 5. Return Generated Coordinates ---
     return (
