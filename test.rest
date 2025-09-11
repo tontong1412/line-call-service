@@ -2,7 +2,12 @@ POST http://localhost:8080/transform_badminton_court
 content-type: application/json
 
 {
-   "src_points": [[464,490],[824,493],[1192,667],[112,662]]
+   "src_points": { 
+      "p1":[464,490],
+      "p2": [824,493],
+      "p17": [1192,667],
+      "p13": [112,662]
+    }
  }
 
 # {

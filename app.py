@@ -162,17 +162,20 @@ def get():
 @app.route("/transform_badminton_court", methods=["POST"])
 def transform_badminton_court():
     """
-    Receives 4 source corner points and optionally an image (base64 encoded).
+    Receives at least 4 source points.
     Returns the coordinates of all badminton court lines generated in the
     destination space (bird's-eye view) AND transformed back into the
     original source image plane.
 
-    Expects a JSON payload with 'src_points' (list of 4 [x,y] points)
-    and optionally 'image_data' (base64 string of the image).
+    Expects a JSON payload with 'src_points'
     Example:
     {
-        "src_points": [[100,50],[500,80],[550,400],[80,380]],
-        "image_data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA..." (optional)
+        "src_points": { 
+            "p1":[464,490],
+            "p2": [824,493],
+            "p3": [1192,667],
+            "p4": [112,662]
+        }
     }
 
     Returns:
@@ -186,76 +189,61 @@ def transform_badminton_court():
     data = request.get_json()
     if not data or "src_points" not in data:
         return (
-            jsonify(
-                {
-                    "error": "Missing 'src_points' parameter in request body. Please provide a list of 4 [x,y] points."
-                }
-            ),
+            jsonify({"error": "Missing 'src_points' parameter in request body. Please provide a list of 4 [x,y] points."}),
             400,
         )
 
     src_points_data = data["src_points"]
-    image_b64 = data.get("image_data")  # image_data is now optional
 
-    # Parse the source points
-    src_court_corners = parse_points(src_points_data)
-
-    if src_court_corners is None or src_court_corners.shape[0] != 4:
-        return (
-            jsonify(
-                {
-                    "error": "Invalid 'src_points' format or incorrect number of points. Expected a list of 4 [x,y] points."
-                }
-            ),
-            400,
-        )
-
-    # --- Image Decoding (optional, only if image_data is provided) ---
-    image = None
-    if image_b64:
-        try:
-            image_bytes = base64.b64decode(image_b64)
-            np_arr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-            if image is None:
-                print(
-                    "Warning: Could not decode optional image data. Proceeding without image."
-                )
-
-        except Exception as e:
-            print(
-                f"Warning: Error decoding optional image: {e}. Proceeding without image."
-            )
 
     # --- 1. Define Destination Points for the Full Court ---
-    # Standard badminton court dimensions (example values in pixels)
+    # Standard badminton court dimensions
     # A full badminton court is approx 13.4m x 6.1m (doubles)
     # We'll use a proportional pixel representation.
     # Let's define a court with width 610 pixels and height 1340 pixels for example.
     court_width = 610
     court_height = 1340
+    net_y = court_height / 2
+    short_service_y = (1.98 / 13.4) * court_height
+    singles_offset_x = (0.46 / 6.1) * court_width
+    long_service_y_from_boundary = (0.76 / 13.4) * court_height
 
-    dst_court_corners = np.array(
-        [
-            [0, court_height / 2],  # Top-left
-            [court_width, court_height / 2],  # Top-right
-            [court_width, court_height],  # Bottom-right
-            [0, court_height],  # Bottom-left
-        ],
-        dtype=np.float32,
-    ).reshape(-1, 1, 2)
+    reference_points = {
+        'p1': [0, net_y],               # net left
+        'p2': [court_width, net_y],     # net right
+        'p3': [0, net_y + short_service_y], # double short service line left
+        'p4': [singles_offset_x, net_y + short_service_y], # single short service line left
+        'p5': [court_width / 2, net_y + short_service_y], # center short service line 
+        'p6': [court_width - singles_offset_x, net_y + short_service_y], # single short service line right
+        'p7': [court_width, net_y + short_service_y], # double short service line right
+        'p8': [0, court_height - long_service_y_from_boundary], # double long service line left
+        'p9': [singles_offset_x, court_height - long_service_y_from_boundary], # single long service line left
+        'p10': [court_width / 2, court_height - long_service_y_from_boundary], # center long service line
+        'p11': [court_width - singles_offset_x, court_height - long_service_y_from_boundary], # single long service line right
+        'p12': [court_width, court_height - long_service_y_from_boundary], # double long service line right
+        'p13': [0, court_height], # double back boundary left
+        'p14': [singles_offset_x, court_height], # single back boundary left
+        'p15': [court_width / 2, court_height], # center back boundary
+        'p16': [court_width - singles_offset_x, court_height], # single back boundary right
+        'p17': [court_width, court_height], # double back boundary right
+    }
+
+    src_points = []
+    dst_points = []
+
+    for key in src_points_data:
+        src_points.append(src_points_data[key])
+        dst_points.append(reference_points[key])
+
+    src_court_points = np.array(src_points, dtype=np.float32).reshape(-1, 1, 2)
+    dst_court_points = np.array(dst_points, dtype=np.float32).reshape(-1, 1, 2)
 
     # --- 2. Calculate Homography ---
     try:
-        H, _ = cv2.findHomography(src_court_corners, dst_court_corners, cv2.RANSAC, 5.0)
+        H, _ = cv2.findHomography(src_court_points, dst_court_points, cv2.RANSAC, 5.0)
         if H is None:
             return (
-                jsonify(
-                    {
-                        "error": "Could not calculate homography matrix from provided corners. Points might be collinear or insufficient."
-                    }
-                ),
+                jsonify({"error": "Could not calculate homography matrix from provided corners. Points might be collinear or insufficient."}),
                 500,
             )
 
@@ -263,25 +251,18 @@ def transform_badminton_court():
         H_inv = np.linalg.inv(H)
 
     except cv2.error as e:
-        return (
-            jsonify({"error": f"OpenCV error during homography calculation: {e}"}),
-            500,
-        )
+        return (jsonify({"error": f"OpenCV error during homography calculation: {e}"}), 500)
     except np.linalg.LinAlgError as e:
         return (
             jsonify(
-                {
-                    "error": f"Linear algebra error (e.g., singular matrix) during inverse homography calculation: {e}"
-                }
+                {"error": f"Linear algebra error (e.g., singular matrix) during inverse homography calculation: {e}"}
             ),
             500,
         )
     except Exception as e:
         return (
             jsonify(
-                {
-                    "error": f"An unexpected error occurred during homography calculation: {e}"
-                }
+                {"error": f"An unexpected error occurred during homography calculation: {e}"}
             ),
             500,
         )
@@ -314,9 +295,8 @@ def transform_badminton_court():
             np.array(line_coords_dst), 2
         ).tolist()
 
-    print(rounded_generated_court_lines_dst)
-    print('----------------------------------')
-    print(transformed_src_lines_coords)
+    # print('----------------------------------')
+    # print(transformed_src_lines_coords)
 
     # --- 5. Return Generated Coordinates ---
     return (
