@@ -546,6 +546,7 @@ def reencode_video(input_file, output_file):
     command = [
         'ffmpeg',       # FFmpeg executable
         '-i', input_file,  # Input file
+        '-movflags', 'faststart',
         output_file      # Output file
     ]
     

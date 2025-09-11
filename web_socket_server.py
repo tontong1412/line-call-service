@@ -86,7 +86,14 @@ async def image_stream_handler(websocket):
                                 court_corners=court_corners,
                             )
                             print("done tracking")
-                            await websocket.send("result")
+                            CHUNK_SIZE = 1024 * 64  # 64KB
+                            print("start streaming video")
+                            with open(f'prediction/{filename}_result.mp4', "rb") as video_file:
+                                while chunk := video_file.read(CHUNK_SIZE):
+                                    await websocket.send(chunk)
+                                    await asyncio.sleep(0.03)  # Adjust frame rate / flow control
+                            print("Finished streaming video.")
+                            await websocket.send("done")
                         except Exception as e:
                             print(e)
                             await websocket.send("result")
