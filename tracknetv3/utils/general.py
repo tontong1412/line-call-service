@@ -323,6 +323,7 @@ def write_pred_video_from_frame(
 
     # Video config
     out = cv2.VideoWriter(save_file, fourcc, fps, (w, h))
+    out_original = cv2.VideoWriter(save_file.replace('.mp4', '_original_temp.mp4'), fourcc, fps, (w, h))
 
     # Create a queue for storing trajectory
     pred_queue = deque()
@@ -332,6 +333,7 @@ def write_pred_video_from_frame(
     # Draw label and prediction trajectory
     for i, frame in enumerate(frame_list):
 
+        out_original.write(frame)
         # Check capacity of queue
         if len(pred_queue) >= traj_len:
             pred_queue.pop()
@@ -378,6 +380,7 @@ def write_pred_video_from_frame(
                 )
 
 
+                # Draw point on the net line
                 circle_center_net = (
                     int(row.X),
                     int(row.y_on_net_pole),
@@ -437,7 +440,9 @@ def write_pred_video_from_frame(
         i += 1
 
     out.release()
-    reencode_video(save_file, save_file.replace(".mp4", "_reencode.mp4"))
+    out_original.release()
+    reencode_video(save_file, save_file.replace(".mp4", "_result.mp4"))
+    reencode_video(save_file.replace('.mp4', '_original_temp.mp4'), save_file.replace(".mp4", "_original.mp4"))
 
 
 def write_pred_video(video_file, pred_dict, save_file, traj_len=8, label_df=None):
@@ -525,7 +530,7 @@ def write_pred_video(video_file, pred_dict, save_file, traj_len=8, label_df=None
 
     out.release()
     cap.release()
-    reencode_video(save_file, save_file.replace(".mp4", "_reencode.mp4"))
+    reencode_video(save_file, save_file.replace(".mp4", "_result.mp4"))
 
 def reencode_video(input_file, output_file):
     """Re-encode video to ensure compatibility.
@@ -548,6 +553,12 @@ def reencode_video(input_file, output_file):
         # Run the command
         subprocess.run(command, check=True)
         print(f"Conversion complete: {output_file}")
+        if os.path.exists(input_file):
+            os.remove(input_file)
+            print(f"{input_file} deleted.")
+        else:
+            print(f"{input_file} does not exist.")
+
     except subprocess.CalledProcessError as e:
         print(f"Error during conversion: {e}")
 

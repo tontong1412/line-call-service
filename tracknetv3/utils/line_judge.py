@@ -611,7 +611,7 @@ def visualize(point, court):
     ax.set_aspect("equal", adjustable="box")
 
     # Display the plot
-    plt.show()
+    plt.savefig('court_and_point.png')
 
 
 # line_judge_decision(test_pred_dict, test_court_coord)
