@@ -19,7 +19,7 @@ def parse_points(points_data):
     Returns:
         np.ndarray: A NumPy array of shape (N, 1, 2) with float32 points,
                     or None if parsing fails.
-    """
+    """   
     try:
         if isinstance(points_data, str):
             points_list = json.loads(points_data)
@@ -84,11 +84,11 @@ def generate_badminton_court_lines_in_dst_space(width, height):
     # Ratios (approximate based on standard dimensions)
     # Total length: 13.4m
     # Total width: 6.1m
-
-    # Short service line (from top/net side)
-    # 1.98m from net, so (1.98 / 13.4) * height
-    short_service_y = (1.98 / 13.4) * height
+    
+    short_service_y = (1.98 / 13.4) * height # 1.98m from net, so (1.98 / 13.4) * height
     net_y = height / 2
+    line_width = (0.04 / 13.4) * height  # 0.04m line width in pixels
+
     lines["net_line"] = [[0, net_y], [width, net_y]]
     lines["short_service_line_top"] = [
         [0, net_y - short_service_y],
@@ -100,8 +100,7 @@ def generate_badminton_court_lines_in_dst_space(width, height):
     ]
 
     # Long service line (doubles) from back boundary
-    # 0.76m from back, so (0.76 / 13.4) * height from bottom
-    long_service_y_from_bottom = (0.76 / 13.4) * height
+    long_service_y_from_bottom = (0.76 / 13.4) * height # 0.76m from back, so (0.76 / 13.4) * height from bottom
     lines["long_service_line_top"] = [
         [0, long_service_y_from_bottom],
         [width, long_service_y_from_bottom],
@@ -114,13 +113,21 @@ def generate_badminton_court_lines_in_dst_space(width, height):
     # Center line (divides court into left/right service boxes)
     # Half width is 3.05m (for doubles)
     center_x = width / 2.0
-    lines["center_line_top"] = [
-        [center_x, 0],
-        [center_x, net_y - short_service_y],
+    lines["center_line_top_left"] = [
+        [center_x - line_width / 2, 0],
+        [center_x - line_width / 2, net_y - short_service_y],
     ]  # Only between short service lines
-    lines["center_line_bottom"] = [
-        [center_x, height],
-        [center_x, net_y + short_service_y],
+    lines["center_line_top_right"] = [
+        [center_x + line_width / 2, 0],
+        [center_x + line_width / 2, net_y - short_service_y],
+    ]  # Only between short service lines
+    lines["center_line_bottom_left"] = [
+        [center_x - line_width / 2, height],
+        [center_x - line_width / 2, net_y + short_service_y],
+    ]  # Only between short service lines
+    lines["center_line_bottom_right"] = [
+        [center_x + line_width / 2 , height],
+        [center_x + line_width / 2, net_y + short_service_y],
     ]  # Only between short service lines
 
     # Singles side lines (inner lines)
@@ -203,6 +210,7 @@ def transform_badminton_court():
     # Let's define a court with width 610 pixels and height 1340 pixels for example.
     court_width = 610
     court_height = 1340
+    line_width = (0.04 / 13.4) * court_height 
     net_y = court_height / 2
     short_service_y = (1.98 / 13.4) * court_height
     singles_offset_x = (0.46 / 6.1) * court_width
@@ -211,25 +219,33 @@ def transform_badminton_court():
     reference_points = {
         'p1': [0, net_y],               # net left
         'p2': [court_width, net_y],     # net right
-        'p3': [0, net_y + short_service_y], # double short service line left
+        # short service line points
+        'p3': [0 + line_width, net_y + short_service_y], # double short service line left
         'p4': [singles_offset_x, net_y + short_service_y], # single short service line left
-        'p5': [court_width / 2, net_y + short_service_y], # center short service line 
+        'p5': [court_width / 2 - line_width / 2, net_y + short_service_y + line_width], # center short service line left 
+        'p55': [court_width / 2 + line_width / 2, net_y + short_service_y + line_width], # center short service line right
         'p6': [court_width - singles_offset_x, net_y + short_service_y], # single short service line right
-        'p7': [court_width, net_y + short_service_y], # double short service line right
-        'p8': [0, court_height - long_service_y_from_boundary], # double long service line left
+        'p7': [court_width - line_width, net_y + short_service_y], # double short service line right
+        # long service line points
+        'p8': [0 + line_width, court_height - long_service_y_from_boundary], # double long service line left
         'p9': [singles_offset_x, court_height - long_service_y_from_boundary], # single long service line left
-        'p10': [court_width / 2, court_height - long_service_y_from_boundary], # center long service line
+        'p10': [court_width / 2 - line_width / 2, court_height - long_service_y_from_boundary], # center long service line left
+        'p100': [court_width / 2 + line_width /2, court_height - long_service_y_from_boundary], # center long service line left
         'p11': [court_width - singles_offset_x, court_height - long_service_y_from_boundary], # single long service line right
-        'p12': [court_width, court_height - long_service_y_from_boundary], # double long service line right
+        'p12': [court_width - line_width, court_height - long_service_y_from_boundary], # double long service line right
+        # back boundary points
         'p13': [0, court_height], # double back boundary left
-        'p14': [singles_offset_x, court_height], # single back boundary left
-        'p15': [court_width / 2, court_height], # center back boundary
-        'p16': [court_width - singles_offset_x, court_height], # single back boundary right
+        'p14': [singles_offset_x, court_height - line_width], # single back boundary left
+        'p15': [court_width / 2 - line_width / 2, court_height - line_width], # center back boundary
+        'p155': [court_width / 2 + line_width / 2, court_height - line_width], # center back boundary
+        'p16': [court_width - singles_offset_x, court_height - line_width], # single back boundary right
         'p17': [court_width, court_height], # double back boundary right
     }
 
     src_points = []
     dst_points = []
+
+    print(src_points_data)
 
     for key in src_points_data:
         src_points.append(src_points_data[key])
