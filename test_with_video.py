@@ -2,16 +2,73 @@ from tracknetv3.utils.general import generate_frames
 import cv2
 from datetime import datetime
 from tracknetv3.predict import track_ball_position
-
-# test_court_coord = {'net_line': [[337.0, 471.0], [945.0, 472.0]], 'short_service_line_top': [[356.7099914550781, 426.9200134277344], [925.5, 427.8999938964844]], 'short_service_line_bottom': [[314.3699951171875, 521.6099853515625], [967.3900146484375, 522.6199951171875]], 'long_service_line_top': [[389.3699951171875, 353.8800048828125], [893.1699829101562, 354.80999755859375]], 'long_service_line_bottom': [[257.29998779296875, 649.25], [1023.8400268554688, 650.260009765625]], 'center_line_top': [[641.4099731445312, 342.19000244140625], [641.25, 427.4100036621094]], 'center_line_bottom': [[640.7899780273438, 679.5], [641.0800170898438, 522.1199951171875]], 'singles_left_line': [[432.010009765625, 341.79998779296875], [303.8800048828125, 679.0800170898438]], 'singles_right_line': [[850.6400146484375, 342.5899963378906], [977.280029296875, 679.9199829101562]], 'outer_boundary_top': [[394.79998779296875, 341.7300109863281], [887.7899780273438, 342.6600036621094]], 'outer_boundary_bottom': [[244.0, 679.0], [1037.0, 680.0]], 'outer_boundary_left': [[394.79998779296875, 341.7300109863281], [244.0, 679.0]], 'outer_boundary_right': [[887.7899780273438, 342.6600036621094], [1037.0, 680.0]]}
-# video_file = 'test_video.mp4'
-
-test_court_coord = {'net_line': [[334.0, 474.0], [948.0, 475.0]], 'short_service_line_top': [[353.3800048828125, 429.9100036621094], [928.3699951171875, 431.0400085449219]], 'short_service_line_bottom': [[311.7900085449219, 524.530029296875], [970.47998046875, 525.3400268554688]], 'long_service_line_top': [[385.5799865722656, 356.6700134277344], [895.72998046875, 357.9700012207031]], 'long_service_line_bottom': [[255.97000122070312, 651.5], [1026.9000244140625, 651.6799926757812]], 'center_line_top': [[641.1099853515625, 345.1199951171875], [641.530029296875, 430.4800109863281]], 'center_line_bottom': [[642.75, 681.0], [641.989990234375, 524.9400024414062]], 'singles_left_line': [[428.739990234375, 344.55999755859375], [303.45001220703125, 681.0]], 'singles_right_line': [[852.77001953125, 345.67999267578125], [980.25, 681.0]], 'outer_boundary_top': [[390.95001220703125, 344.4599914550781], [890.2899780273438, 345.7799987792969]], 'outer_boundary_bottom': [[243.0, 681.0], [1040.0, 681.0]], 'outer_boundary_left': [[390.95001220703125, 344.4599914550781], [243.0, 681.0]], 'outer_boundary_right': [[890.2899780273438, 345.7799987792969], [1040.0, 681.0]]}
-video_file = 'test_video1.mp4'
+import numpy as np
 
 
-# video_file = 'test_parainen_720.mp4'
-# test_court_coord={'net_line': [[464.0, 490.0], [824.0, 493.0]], 'short_service_line_top': [[492.7200012207031, 475.9700012207031], [793.469970703125, 478.55999755859375]], 'short_service_line_bottom': [[421.1199951171875, 510.95001220703125], [869.4400024414062, 514.489990234375]], 'long_service_line_top': [[528.77001953125, 458.3500061035156], [755.0399780273438, 460.3900146484375]], 'long_service_line_bottom': [[210.1999969482422, 614.02001953125], [1090.47998046875, 619.0]], 'center_line_top': [[641.97998046875, 456.9100036621094], [643.5800170898438, 477.2699890136719]], 'center_line_bottom': [[658.25, 664.530029296875], [646.3599853515625, 512.72998046875]], 'singles_left_line': [[550.0900268554688, 456.07000732421875], [195.1999969482422, 662.3900146484375]], 'singles_right_line': [[733.52001953125, 457.739990234375], [1112.280029296875, 666.6300048828125]], 'outer_boundary_top': [[533.72998046875, 455.92999267578125], [749.739990234375, 457.8900146484375]], 'outer_boundary_bottom': [[112.0, 662.0], [1192.0, 667.0]], 'outer_boundary_left': [[533.72998046875, 455.92999267578125], [112.0, 662.0]], 'outer_boundary_right': [[749.739990234375, 457.8900146484375], [1192.0, 667.0]]}
+search_radius = 10  # px radius around click to search for corner
+corner_quality = 0.01
+min_corner_distance = 2
+use_canny = True  # ✅ Toggle this to enable/disable Canny edge detection
+
+
+video_file = 'halfcourt60.mp4'
+test_court_coord={}
+
+user_points = []
+refined_corners = []
+
+def click_event(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        user_points.append((x, y))
+        cv2.circle(display, (x, y), 3, (255, 0, 0), -1)
+        cv2.imshow("Select corners", display)
+
+        # Once 4 corners are selected, refine them
+        if len(user_points) == 4:
+            refine_corners()
+
+def refine_corners():
+    global refined_corners
+
+    gray = cv2.cvtColor(display, cv2.COLOR_BGR2GRAY)
+
+    # --- Optionally apply Canny edge detection ---
+    if use_canny:
+        print("🔍 Using Canny edge detection for refinement...")
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        proc_img = cv2.Canny(blurred, 50, 150)
+    else:
+        print("🎯 Using grayscale image for refinement...")
+        proc_img = gray
+
+    for (x, y) in user_points:
+        x1, y1 = max(x - search_radius, 0), max(y - search_radius, 0)
+        x2, y2 = min(x + search_radius, proc_img.shape[1]), min(y + search_radius, proc_img.shape[0])
+        roi = proc_img[y1:y2, x1:x2]
+
+        # Detect corners in ROI
+        corners = cv2.goodFeaturesToTrack(
+            roi, maxCorners=5, qualityLevel=corner_quality, minDistance=min_corner_distance
+        )
+
+        if corners is not None:
+            corners = corners.astype(int)
+            corners = [(c.ravel()[0] + x1, c.ravel()[1] + y1) for c in corners]
+            distances = [np.hypot(cx - x, cy - y) for cx, cy in corners]
+            nearest_corner = corners[np.argmin(distances)]
+            refined_corners.append(nearest_corner)
+            cv2.circle(display, nearest_corner, 3, (0, 0, 255), -1)
+        else:
+            refined_corners.append((x, y))  # fallback
+
+    # Draw labels on original frame
+    for i, c in enumerate(refined_corners):
+        cv2.putText(display, f"C{i+1}", (int(c[0]) + 5, int(c[1]) - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+    cv2.imshow("Detected Corners", display)
+    print("Refined corners:", refined_corners)
+
 
 cap = cv2.VideoCapture(video_file)
 
@@ -28,10 +85,11 @@ filename = datetime.now().strftime("%m_%d_%Y_%H:%M:%S")
 # for i in range(625, len(frame_list), 1):
 #     cv2.imshow(f"output_frames/frame_{i}.jpg", frame_list[i])
 #     cv2.waitKey(0)
-
-# cv2.imshow("Badminton Court Frame", frame_list[0])
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+display = frame_list[0].copy()
+cv2.imshow("Badminton Court Frame", frame_list[0])
+cv2.setMouseCallback("Select corners", click_event)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 track_ball_position(
     frame_list,
