@@ -1,200 +1,205 @@
+from typing import Any
 import cv2
+import sys
 import numpy as np
-from .court_model import court_width, court_height, reference_points
 import json
 
-def refine_corners(image, user_points, use_canny=True):
-    search_radius = 15  # px radius around click to search for corner
-    corner_quality = 0.8
-    min_corner_distance = 2
-    refined_corners = []
+# Handle both relative import (when used as module) and absolute import (when run directly)
+try:
+    from .court_model import reference_points, reference_lines
+except ImportError:
+    from court_model import reference_points, reference_lines
 
-    display = image.copy()
-    gray = cv2.cvtColor(display, cv2.COLOR_BGR2GRAY)
+window_select_corners = 'Select corners'
+window_show_court_lines = 'Detected court lines'
+selected_corners = {}
 
-    if use_canny:
-        print("🔍 Using Canny edge detection for refinement...")
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        proc_img = cv2.Canny(blurred, 50, 150)
-    else:
-        print("🎯 Using grayscale image for refinement...")
-        proc_img = gray
-
-    for (x, y) in user_points:
-        x1, y1 = max(x - search_radius, 0), max(y - search_radius, 0)
-        x2, y2 = min(x + search_radius, proc_img.shape[1]), min(y + search_radius, proc_img.shape[0])
-        roi = proc_img[y1:y2, x1:x2]
-
-        # Detect corners in ROI
-        corners = cv2.goodFeaturesToTrack(
-            roi, maxCorners=5, qualityLevel=corner_quality, minDistance=min_corner_distance
-        )
-
-        if corners is not None:
-            corners = corners.astype(int)
-            corners = [(c.ravel()[0] + x1, c.ravel()[1] + y1) for c in corners]
-            distances = [np.hypot(cx - x, cy - y) for cx, cy in corners]
-            nearest_corner = corners[np.argmin(distances)]
-            refined_corners.append(nearest_corner)
-        else:
-            refined_corners.append((x, y))  # fallback
-    print("✅ Corner refinement complete.")
-    return refined_corners
-
-
-def court_homography(user_points):
-    video_points = []
+def find_court_lines(corners):
+    actual_points = []
     model_points = []
-    for key in user_points:
-        video_points.append(user_points[key])
-        model_points.append(reference_points[key])
 
-    video_points_np = np.array(video_points, dtype=np.float32).reshape(-1, 1, 2)
+    for key in corners:
+        actual_points.append(corners[key])
+        model_points.append(reference_points[key])
+    
+    print('-' * 10)
+    print(actual_points)
+    print(model_points)
+    actual_points_np = np.array(actual_points, dtype=np.float32).reshape(-1, 1, 2)
     model_points_np = np.array(model_points, dtype=np.float32).reshape(-1, 1, 2)
 
     try:
-        H, _ = cv2.findHomography(video_points_np, model_points_np, cv2.RANSAC, 5.0)
+        H, _ = cv2.findHomography(actual_points_np, model_points_np, cv2.RANSAC, 5.0)
         if H is None:
             raise Exception("Could not calculate homography matrix from provided corners. Points might be collinear or insufficient.")
-
-        # Calculate the inverse homography matrix
+        # calculate the inverse homography matrix
         H_inv = np.linalg.inv(H)
-
     except cv2.error as e:
         raise Exception(f"OpenCV error during homography calculation: {e}")
     except np.linalg.LinAlgError as e:
         raise Exception(f"Linear algebra error (e.g., singular matrix) during inverse homography calculation: {e}")
     except Exception as e:
         raise Exception(f"Unexpected error during homography calculation: {e}")
+
+    court_lines_actual = {}
+    for line_name, line_coords_model in reference_lines.items():
+        # convert list of lists to NumPy array for perspectiveTransform
+        line_coords_model_np = np.array(line_coords_model, dtype=np.float32).reshape(-1, 1, 2)
+
+        # apply inverse homography to get coords in actual(video) plane
+        line_coords_actual_np = cv2.perspectiveTransform(line_coords_model_np, H_inv)
+
+        # convert back to list of lists for JSON response and round to 2 decimal places
+        court_lines_actual[line_name] = np.rint(line_coords_actual_np.reshape(-1, 2)).astype(int).tolist()
+
+    return court_lines_actual
+
+
+def find_corner(image, point_coord, radius=15, quality=0.8, distance=2):
+    x_center, y_center = point_coord
+
+    # Define bounding box around the point
+    x1 = max(x_center - radius, 0)
+    y1 = max(y_center - radius, 0)
+    x2 = min(x_center + radius, image.shape[1])
+    y2 = min(y_center + radius, image.shape[0])
+
+    # Crop the Image (ROI)
+    roi = image[y1:y2, x1:x2]
+
+    # Check if the ROI is empty
+    if roi.size == 0:
+        return None
+
+    # Convert the ROI to grayscale
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    corners_in_roi = cv2.goodFeaturesToTrack(
+        gray, 
+        maxCorners=1, 
+        qualityLevel=quality, 
+        minDistance=distance, 
+        blockSize=3
+    )
+
+    if corners_in_roi is None:
+        return None
+
+    # Get the coordinates of the first (and only) corner found in the ROI
+    # The corner coordinates are relative to the ROI's top-left corner (0, 0)
+    corner_roi_x, corner_roi_y = corners_in_roi[0].ravel().astype(int)
+
+    # Map the Corner Back to Original Image Coordinates
+    original_corner_x = x1 + corner_roi_x
+    original_corner_y = y1 + corner_roi_y
+
+    return (int(original_corner_x), int(original_corner_y))
+
+def mouse_callback(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print(f"Clicked at ({x}, {y})")
+
+        label_text = input('Please enter label for this corner: ')
+
+        corner = find_corner(param, (x,y))
+        print(f"Point {label_text}: ({corner[0]}, {corner[1]})")
+        selected_corners[label_text] = corner
+
+        # draw the new corner on the image
+        img_copy = param
+        # draw selected point
+        cv2.circle(img_copy, (x, y), 2, (0, 0, 255), -1)
+        # draw corner
+        cv2.circle(img_copy, corner, 2, (0, 255, 255), -1)
+
+        # Update the display with the new corner
+        cv2.imshow(window_select_corners, img_copy)
+
+def select_corners_from_image(image):
+    img_with_corners = image.copy()
+
+    # create a window to select the corners
+    cv2.namedWindow(window_select_corners)
+
+    # set the mouse callback to the window
+    cv2.setMouseCallback(window_select_corners, mouse_callback, img_with_corners)
+
+    # display the image and wait for the interaction
+    cv2.imshow(window_select_corners, img_with_corners)
+
+    while True:
+        key = cv2.waitKey(20) & 0xFF
+        if key == 27: # ESC key to break the loop
+            break
     
-    court_lines_model = generate_court_lines_in_top_view(court_width, court_height)
+    # cleanup
+    cv2.destroyAllWindows()
 
-    court_lines_video = {}
-    for line_name, line_coords_dst in court_lines_model.items():
-        # Convert list of lists to NumPy array for perspectiveTransform
-        line_points_model_np = np.array(line_coords_dst, dtype=np.float32).reshape(-1, 1, 2)
+def draw_court_lines(image, court_lines, color=(0, 0, 255), line_width=1, font_scale=1):
+    img_with_court_lines = image.copy()
+    cv2.namedWindow(window_show_court_lines)
+    for line_name, line_coords in court_lines.items():
+        print(line_coords)
+        cv2.line(
+            img_with_court_lines, 
+            tuple(line_coords[0]), 
+            tuple(line_coords[1]), 
+            color, 
+            line_width
+        )
+        cv2.putText(
+            img_with_court_lines, line_name, 
+            tuple(line_coords[1]),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            line_width
+        )
 
-        # Apply inverse homography to get points in video plane
-        line_points_src_np = cv2.perspectiveTransform(line_points_model_np, H_inv)
+    cv2.imshow(window_show_court_lines, img_with_court_lines)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-        # Convert back to list of lists for JSON response and round to 2 decimal places
-        court_lines_video[line_name] = np.round(line_points_src_np.reshape(-1, 2), 2).tolist()
+
+def detect_court(image, select_corners=False, corners=None):
+    global selected_corners
     
-    rounded_court_lines_model = {}
-    for line_name, line_coords_dst in court_lines_model.items():
-        rounded_court_lines_model[line_name] = np.round(
-            np.array(line_coords_dst), 2
-        ).tolist()
+    if(select_corners):
+        select_corners_from_image(image)
+        # Use the global selected_corners that was modified by select_corners_from_image
+        corners_dict = selected_corners.copy()
+    else:
+        # Parse corners from JSON string
+        corners_dict = json.loads(corners) if isinstance(corners, str) else corners
+        
+    court_lines = find_court_lines(corners_dict)
 
-    return {
-                "court_lines_model": rounded_court_lines_model,
-                "court_lines_video": court_lines_video,
-                "model_court_dimensions": {
-                    "width": court_width,
-                    "height": court_height,
-                },
-                "homography_matrix": np.round(H, 2).tolist(),
-                "inverse_homography_matrix": np.round(H_inv, 2).tolist(),
-            }
-
-
-def generate_court_lines_in_top_view(width, height):
-    """
-    Generates the coordinates for all standard badminton court lines
-    within a rectangular destination space of given width and height.
-
-    Assumes the court is oriented such that its length is along the Y-axis
-    and width along the X-axis, starting from (0,0).
-
-    Standard badminton court dimensions (approximate ratios):
-    Full length: 13.4m
-    Full width (doubles): 6.1m
-    Singles width: 5.18m (half court width is 3.05m)
-    Short service line from net: 1.98m
-    Long service line (doubles) from back: 0.76m
-    Long service line (singles) from back: 0.76m (but court is narrower)
-    Net to center line: 6.7m
-
-    We'll use pixel ratios based on these dimensions.
-    """
-    lines = {}
-
-    # Convert meters to pixels based on total court height/width
-    # Assuming court_height = 1340 pixels corresponds to 13.4m
-    # Assuming court_width = 610 pixels corresponds to 6.1m
-
-    # Ratios (approximate based on standard dimensions)
-    # Total length: 13.4m
-    # Total width: 6.1m
+    if select_corners:
+        draw_court_lines(image, court_lines)
     
-    short_service_y = (1.98 / 13.4) * height # 1.98m from net, so (1.98 / 13.4) * height
-    net_y = height / 2
-    line_width = (0.04 / 13.4) * height  # 0.04m line width in pixels
+    return (court_lines, corners_dict)
 
-    lines["net_line"] = [[0, net_y], [width, net_y]]
-    lines["short_service_line_top"] = [
-        [0, net_y - short_service_y],
-        [width, net_y - short_service_y],
-    ]
-    lines["short_service_line_bottom"] = [
-        [0, net_y + short_service_y],
-        [width, net_y + short_service_y],
-    ]
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python court_detection.py <filename> [select_corners] [corners]")
+        sys.exit(1)
+    filename = sys.argv[1]
 
-    # Long service line (doubles) from back boundary
-    long_service_y_from_bottom = (0.76 / 13.4) * height # 0.76m from back, so (0.76 / 13.4) * height from bottom
-    lines["long_service_line_top"] = [
-        [0, long_service_y_from_bottom],
-        [width, long_service_y_from_bottom],
-    ]  # This would be the back boundary of the other side
-    lines["long_service_line_bottom"] = [
-        [0, height - long_service_y_from_bottom],
-        [width, height - long_service_y_from_bottom],
-    ]
+    select_corners = False
+    corners = None
 
-    # Center line (divides court into left/right service boxes)
-    # Half width is 3.05m (for doubles)
-    center_x = width / 2.0
-    lines["center_line_top_left"] = [
-        [center_x - line_width / 2, 0],
-        [center_x - line_width / 2, net_y - short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_top_right"] = [
-        [center_x + line_width / 2, 0],
-        [center_x + line_width / 2, net_y - short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_bottom_left"] = [
-        [center_x - line_width / 2, height],
-        [center_x - line_width / 2, net_y + short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_bottom_right"] = [
-        [center_x + line_width / 2 , height],
-        [center_x + line_width / 2, net_y + short_service_y],
-    ]  # Only between short service lines
+    if len(sys.argv) > 2:
+        select_corners = True if sys.argv[2].lower() in ["true", "1", "yes"] else False
 
-    # Singles side lines (inner lines)
-    # Singles width is 5.18m. So, (5.18 / 6.1) * width
-    # Each side is (6.1 - 5.18) / 2 = 0.46m from the doubles sideline
-    singles_offset_x = (0.46 / 6.1) * width
-    lines["singles_left_line"] = [[singles_offset_x, 0], [singles_offset_x, height]]
-    lines["singles_right_line"] = [
-        [width - singles_offset_x, 0],
-        [width - singles_offset_x, height],
-    ]
+    if not select_corners:
+        if len(sys.argv) < 4:
+            print("Error: When select_corners is False, you must provide [corners] file path (as 3rd argument)")
+            sys.exit(1)
+        corners = sys.argv[3]
 
-    # Outer boundary lines (main court outline)
-    lines["outer_boundary_top"] = [[0, 0], [width, 0]]
-    lines["outer_boundary_bottom"] = [[0, height], [width, height]]
-    lines["outer_boundary_left"] = [[0, 0], [0, height]]
-    lines["outer_boundary_right"] = [[width, 0], [width, height]]
+    print(f"Received file name: {filename}")
+    image = cv2.imread(filename)
+    court_lines, court_corners = detect_court(image, select_corners, corners)
+    print(court_lines)
+    print(court_corners)
 
-    # Convert all points to the required NumPy array format (N, 1, 2)
-    # And group them for easier consumption by the client
-    all_generated_points = {}
-    for line_name, line_coords in lines.items():
-        # Each line is defined by two points [start_x, start_y], [end_x, end_y]
-        # We want to return them as a list of lists of points, where each inner list
-        # represents a segment.
-        all_generated_points[line_name] = (np.array(line_coords, dtype=np.float32).reshape(-1, 2).tolist())
-
-    return all_generated_points

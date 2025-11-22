@@ -2,11 +2,11 @@ import cv2
 import numpy as np
 
 # --- Parameters ---
-video_path = "fullcourt240-2.mp4"  # your video file
+video_path = "halfcourt30.mp4"  # your video file
 search_radius = 10  # px radius around click to search for corner
-corner_quality = 0.01
+corner_quality = 0.8
 min_corner_distance = 2
-use_canny = True  # ✅ Toggle this to enable/disable Canny edge detection
+use_canny = False  # ✅ Toggle this to enable/disable Canny edge detection
 
 # --- Load first frame from video ---
 cap = cv2.VideoCapture(video_path)

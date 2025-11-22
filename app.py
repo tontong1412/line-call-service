@@ -3,6 +3,8 @@ import numpy as np
 from flask import Flask, request, jsonify
 import base64
 import json
+from libs.court_detection import court_homography
+from libs.court_model import court_width, court_height, reference_points
 
 # Initialize the Flask application
 app = Flask(__name__)
@@ -210,127 +212,19 @@ def transform_badminton_court():
     # Let's define a court with width 610 pixels and height 1340 pixels for example.
     court_width = 610
     court_height = 1340
-    line_width = (0.04 / 13.4) * court_height 
-    net_y = court_height / 2
-    short_service_y = (1.98 / 13.4) * court_height
-    singles_offset_x = (0.46 / 6.1) * court_width
-    long_service_y_from_boundary = (0.76 / 13.4) * court_height
-
-    reference_points = {
-        'p1': [0, net_y],               # net left
-        'p2': [court_width, net_y],     # net right
-        # short service line points
-        'p3': [0 + line_width, net_y + short_service_y], # double short service line left
-        'p4': [singles_offset_x, net_y + short_service_y], # single short service line left
-        'p5': [court_width / 2 - line_width / 2, net_y + short_service_y + line_width], # center short service line left 
-        'p55': [court_width / 2 + line_width / 2, net_y + short_service_y + line_width], # center short service line right
-        'p6': [court_width - singles_offset_x, net_y + short_service_y], # single short service line right
-        'p7': [court_width - line_width, net_y + short_service_y], # double short service line right
-        # long service line points
-        'p8': [0 + line_width, court_height - long_service_y_from_boundary], # double long service line left
-        'p9': [singles_offset_x, court_height - long_service_y_from_boundary], # single long service line left
-        'p10': [court_width / 2 - line_width / 2, court_height - long_service_y_from_boundary], # center long service line left
-        'p100': [court_width / 2 + line_width /2, court_height - long_service_y_from_boundary], # center long service line left
-        'p11': [court_width - singles_offset_x, court_height - long_service_y_from_boundary], # single long service line right
-        'p12': [court_width - line_width, court_height - long_service_y_from_boundary], # double long service line right
-        # back boundary points
-        'p13': [0, court_height], # double back boundary left
-        'p14': [singles_offset_x, court_height - line_width], # single back boundary left
-        'p15': [court_width / 2 - line_width / 2, court_height - line_width], # center back boundary
-        'p155': [court_width / 2 + line_width / 2, court_height - line_width], # center back boundary
-        'p16': [court_width - singles_offset_x, court_height - line_width], # single back boundary right
-        'p17': [court_width, court_height], # double back boundary right
-    }
-
-    src_points = []
-    dst_points = []
-
-    print(src_points_data)
-
-    for key in src_points_data:
-        src_points.append(src_points_data[key])
-        dst_points.append(reference_points[key])
-
-    src_court_points = np.array(src_points, dtype=np.float32).reshape(-1, 1, 2)
-    dst_court_points = np.array(dst_points, dtype=np.float32).reshape(-1, 1, 2)
 
     # --- 2. Calculate Homography ---
     try:
-        H, _ = cv2.findHomography(src_court_points, dst_court_points, cv2.RANSAC, 5.0)
-        if H is None:
-            return (
-                jsonify({"error": "Could not calculate homography matrix from provided corners. Points might be collinear or insufficient."}),
-                500,
-            )
+        response = court_homography(src_points_data)
+        return (jsonify(response),200)
 
-        # Calculate the inverse homography matrix
-        H_inv = np.linalg.inv(H)
-
-    except cv2.error as e:
-        return (jsonify({"error": f"OpenCV error during homography calculation: {e}"}), 500)
-    except np.linalg.LinAlgError as e:
-        return (
-            jsonify(
-                {"error": f"Linear algebra error (e.g., singular matrix) during inverse homography calculation: {e}"}
-            ),
-            500,
-        )
     except Exception as e:
         return (
-            jsonify(
-                {"error": f"An unexpected error occurred during homography calculation: {e}"}
-            ),
+            jsonify({"error": f"{e}"}),
             500,
         )
 
-    # --- 3. Generate All Court Lines in the Destination Space (Bird's-Eye View) ---
-    generated_court_lines_dst = generate_badminton_court_lines_in_dst_space(
-        court_width, court_height
-    )
-
-    # --- 4. Transform Generated Lines Back to Source Plane ---
-    transformed_src_lines_coords = {}
-    for line_name, line_coords_dst in generated_court_lines_dst.items():
-        # Convert list of lists to NumPy array for perspectiveTransform
-        line_points_dst_np = np.array(line_coords_dst, dtype=np.float32).reshape(
-            -1, 1, 2
-        )
-
-        # Apply inverse homography to get points in source plane
-        line_points_src_np = cv2.perspectiveTransform(line_points_dst_np, H_inv)
-
-        # Convert back to list of lists for JSON response and round to 2 decimal places
-        transformed_src_lines_coords[line_name] = np.round(
-            line_points_src_np.reshape(-1, 2), 2
-        ).tolist()
-
-    # Round generated_court_lines_dst coordinates to 2 decimal places as well
-    rounded_generated_court_lines_dst = {}
-    for line_name, line_coords_dst in generated_court_lines_dst.items():
-        rounded_generated_court_lines_dst[line_name] = np.round(
-            np.array(line_coords_dst), 2
-        ).tolist()
-
-    # print('----------------------------------')
-    # print(transformed_src_lines_coords)
-
-    # --- 5. Return Generated Coordinates ---
-    return (
-        jsonify(
-            {
-                "message": "Badminton court line coordinates generated and transformed.",
-                "generated_court_lines_dst": rounded_generated_court_lines_dst,
-                "generated_court_lines_src": transformed_src_lines_coords,
-                "output_court_dimensions": {
-                    "width": court_width,
-                    "height": court_height,
-                },
-                "homography_matrix": np.round(H, 2).tolist(),
-                "inverse_homography_matrix": np.round(H_inv, 2).tolist(),
-            }
-        ),
-        200,
-    )
+    
 
 
 # --- Main execution block ---
