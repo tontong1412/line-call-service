@@ -2,6 +2,7 @@ import os
 import argparse
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
@@ -80,25 +81,39 @@ def predict(indices, y_pred=None, c_pred=None, img_scaler=(1, 1)):
 
 def track_ball_position(
     frame_list,
-    w,
-    h,
+    frame_width,
+    frame_height,
     video_name,
     batch_size,
-    court_coord,
-    court_corners,
+    # court_coord,
+    # court_corners,
 ):
     num_workers = batch_size if batch_size <= 16 else 16
     save_dir = "prediction"
     out_csv_file = os.path.join(save_dir, f"{video_name}_ball.csv")
-    out_video_file = os.path.join(save_dir, f"{video_name}.mp4")
     eval_mode = "weight"
-    traj_len = 8
-
-    tracknet_file = "tracknetv3/ckpts/TrackNet_best.pt"
-    inpaintnet_file = "tracknetv3/ckpts/InpaintNet_best.pt"
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+    
+
+    # Try finding weights in several common locations
+    default_ckpt_dir = Path(__file__).parent / "ckpts"
+    alt_ckpt_dir = Path(__file__).parent.parent / "ckpts"
+
+    if (default_ckpt_dir / "TrackNet_best.pt").exists():
+        tracknet_file = str(default_ckpt_dir / "TrackNet_best.pt")
+    elif (alt_ckpt_dir / "TrackNet_best.pt").exists():
+        tracknet_file = str(alt_ckpt_dir / "TrackNet_best.pt")
+    else:
+        raise FileNotFoundError("TrackNet_best.pt not found in tracknetv3/ckpts/ or project-level ckpts directory.")
+
+    if (default_ckpt_dir / "InpaintNet_best.pt").exists():
+        inpaintnet_file = str(default_ckpt_dir / "InpaintNet_best.pt")
+    elif (alt_ckpt_dir / "InpaintNet_best.pt").exists():
+        inpaintnet_file = str(alt_ckpt_dir / "InpaintNet_best.pt")
+    else:
+        raise FileNotFoundError("InpaintNet_best.pt not found in tracknetv3/ckpts/ or project-level ckpts directory.") 
 
     # Load model
     tracknet_ckpt = torch.load(tracknet_file)
@@ -112,7 +127,7 @@ def track_ball_position(
     inpaintnet = get_model("InpaintNet").cuda()
     inpaintnet.load_state_dict(inpaintnet_ckpt["model"])
 
-    w_scaler, h_scaler = w / WIDTH, h / HEIGHT
+    w_scaler, h_scaler = frame_width / WIDTH, frame_height / HEIGHT
     img_scaler = (w_scaler, h_scaler)
 
     tracknet_pred_dict = {
@@ -122,7 +137,7 @@ def track_ball_position(
         "Visibility": [],
         "Inpaint_Mask": [],
         "Img_scaler": (w_scaler, h_scaler),
-        "Img_shape": (w, h),
+        "Img_shape": (frame_width, frame_height),
     }
 
     # Test on TrackNet
@@ -144,6 +159,7 @@ def track_ball_position(
         num_workers=num_workers,
         drop_last=False,
     )
+
     video_len = len(frame_list)
 
     # Init prediction buffer params
@@ -214,7 +230,7 @@ def track_ball_position(
     inpaintnet.eval()
     seq_len = inpaintnet_seq_len
     tracknet_pred_dict["Inpaint_Mask"] = generate_inpaint_mask(
-        tracknet_pred_dict, th_h=h * 0.05
+        tracknet_pred_dict, th_h=frame_height * 0.05
     )
     inpaint_pred_dict = {"Frame": [], "X": [], "Y": [], "Visibility": []}
 
@@ -310,19 +326,21 @@ def track_ball_position(
     pred_dict = inpaint_pred_dict if inpaintnet is not None else tracknet_pred_dict
     write_pred_csv(pred_dict, save_file=out_csv_file)
 
-    print(court_coord)
+    return pred_dict
+
+    # print(court_coord)
 
 
-    decision = line_judge_decision(pred_dict, court_coord)
+    # decision = line_judge_decision(pred_dict, court_coord)
 
-    # Write video with predicted coordinates
-    write_pred_video_from_frame(
-        frame_list,
-        w,
-        h,
-        pred_dict,
-        decision,
-        save_file=out_video_file,
-        traj_len=traj_len,
-        court_coord=court_coord,
-    )
+    # # Write video with predicted coordinates
+    # write_pred_video_from_frame(
+    #     frame_list,
+    #     w,
+    #     h,
+    #     pred_dict,
+    #     decision,
+    #     save_file=out_video_file,
+    #     traj_len=traj_len,
+    #     court_coord=court_coord,
+    # )
