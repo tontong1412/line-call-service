@@ -11,10 +11,10 @@ reference_points = {
     'n0': [0, net_y],              
     'n1': [court_width, net_y],     
     # short service line points
-    's0': [line_width, net_y + short_service_y +line_width], # double short service line left
-    's1': [singles_offset_x, net_y + short_service_y + line_width], # single short service line left
-    's2': [court_width - singles_offset_x, net_y + short_service_y + line_width], # single short service line right
-    's3': [court_width - line_width, net_y + short_service_y + line_width], # double short service line right
+    's0': [line_width, net_y + short_service_y], # double short service line left
+    's1': [singles_offset_x + line_width, net_y + short_service_y], # single short service line left
+    's2': [court_width - singles_offset_x - line_width, net_y + short_service_y], # single short service line right
+    's3': [court_width - line_width, net_y + short_service_y], # double short service line right
     # long service line points
     'l0': [line_width, court_height - long_service_y_from_boundary - line_width], # double long service line left
     'l1': [singles_offset_x + line_width, court_height - long_service_y_from_boundary - line_width], # single long service line left

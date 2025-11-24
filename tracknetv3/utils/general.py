@@ -264,7 +264,7 @@ def draw_traj(img, traj, radius=3, color="red"):
     return img
 
 
-def draw_court(img, court_coord, color=(200, 0, 0), line_thickness=2):
+def draw_court(img, court_coord, color=(200, 0, 0), line_thickness=1):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = Image.fromarray(img)
 
@@ -336,7 +336,7 @@ def write_pred_video_from_frame(
         out_original.write(frame)
         # Check capacity of queue
         if len(pred_queue) >= traj_len:
-            pred_queue.pop()
+            pred_queue.pop() 
         if label_df is not None and len(gt_queue) >= traj_len:
             gt_queue.pop()
 
@@ -545,14 +545,21 @@ def reencode_video(input_file, output_file):
     # Construct the FFmpeg command
     command = [
         'ffmpeg',       # FFmpeg executable
+        '-loglevel', 'quiet',  # Suppress all output
         '-i', input_file,  # Input file
         '-movflags', 'faststart',
+        '-y',  # Overwrite output file if it exists
         output_file      # Output file
     ]
     
     try:
-        # Run the command
-        subprocess.run(command, check=True)
+        # Run the command with output suppressed
+        subprocess.run(
+            command, 
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         print(f"Conversion complete: {output_file}")
         if os.path.exists(input_file):
             os.remove(input_file)

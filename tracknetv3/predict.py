@@ -85,8 +85,6 @@ def track_ball_position(
     frame_height,
     video_name,
     batch_size,
-    # court_coord,
-    # court_corners,
 ):
     num_workers = batch_size if batch_size <= 16 else 16
     save_dir = "prediction"
@@ -327,20 +325,3 @@ def track_ball_position(
     write_pred_csv(pred_dict, save_file=out_csv_file)
 
     return pred_dict
-
-    # print(court_coord)
-
-
-    # decision = line_judge_decision(pred_dict, court_coord)
-
-    # # Write video with predicted coordinates
-    # write_pred_video_from_frame(
-    #     frame_list,
-    #     w,
-    #     h,
-    #     pred_dict,
-    #     decision,
-    #     save_file=out_video_file,
-    #     traj_len=traj_len,
-    #     court_coord=court_coord,
-    # )

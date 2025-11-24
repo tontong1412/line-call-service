@@ -3,7 +3,7 @@ import numpy as np
 from flask import Flask, request, jsonify
 import base64
 import json
-from libs.court_detection import court_homography
+from libs.court_detection import detect_court, find_corner
 from libs.court_model import court_width, court_height, reference_points
 
 # Initialize the Flask application
@@ -57,109 +57,7 @@ def parse_points(points_data):
         return None
 
 
-# --- Function to Generate Badminton Court Lines in Destination Space ---
-def generate_badminton_court_lines_in_dst_space(width, height):
-    """
-    Generates the coordinates for all standard badminton court lines
-    within a rectangular destination space of given width and height.
 
-    Assumes the court is oriented such that its length is along the Y-axis
-    and width along the X-axis, starting from (0,0).
-
-    Standard badminton court dimensions (approximate ratios):
-    Full length: 13.4m
-    Full width (doubles): 6.1m
-    Singles width: 5.18m (half court width is 3.05m)
-    Short service line from net: 1.98m
-    Long service line (doubles) from back: 0.76m
-    Long service line (singles) from back: 0.76m (but court is narrower)
-    Net to center line: 6.7m
-
-    We'll use pixel ratios based on these dimensions.
-    """
-    lines = {}
-
-    # Convert meters to pixels based on total court height/width
-    # Assuming court_height = 1340 pixels corresponds to 13.4m
-    # Assuming court_width = 610 pixels corresponds to 6.1m
-
-    # Ratios (approximate based on standard dimensions)
-    # Total length: 13.4m
-    # Total width: 6.1m
-    
-    short_service_y = (1.98 / 13.4) * height # 1.98m from net, so (1.98 / 13.4) * height
-    net_y = height / 2
-    line_width = (0.04 / 13.4) * height  # 0.04m line width in pixels
-
-    lines["net_line"] = [[0, net_y], [width, net_y]]
-    lines["short_service_line_top"] = [
-        [0, net_y - short_service_y],
-        [width, net_y - short_service_y],
-    ]
-    lines["short_service_line_bottom"] = [
-        [0, net_y + short_service_y],
-        [width, net_y + short_service_y],
-    ]
-
-    # Long service line (doubles) from back boundary
-    long_service_y_from_bottom = (0.76 / 13.4) * height # 0.76m from back, so (0.76 / 13.4) * height from bottom
-    lines["long_service_line_top"] = [
-        [0, long_service_y_from_bottom],
-        [width, long_service_y_from_bottom],
-    ]  # This would be the back boundary of the other side
-    lines["long_service_line_bottom"] = [
-        [0, height - long_service_y_from_bottom],
-        [width, height - long_service_y_from_bottom],
-    ]
-
-    # Center line (divides court into left/right service boxes)
-    # Half width is 3.05m (for doubles)
-    center_x = width / 2.0
-    lines["center_line_top_left"] = [
-        [center_x - line_width / 2, 0],
-        [center_x - line_width / 2, net_y - short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_top_right"] = [
-        [center_x + line_width / 2, 0],
-        [center_x + line_width / 2, net_y - short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_bottom_left"] = [
-        [center_x - line_width / 2, height],
-        [center_x - line_width / 2, net_y + short_service_y],
-    ]  # Only between short service lines
-    lines["center_line_bottom_right"] = [
-        [center_x + line_width / 2 , height],
-        [center_x + line_width / 2, net_y + short_service_y],
-    ]  # Only between short service lines
-
-    # Singles side lines (inner lines)
-    # Singles width is 5.18m. So, (5.18 / 6.1) * width
-    # Each side is (6.1 - 5.18) / 2 = 0.46m from the doubles sideline
-    singles_offset_x = (0.46 / 6.1) * width
-    lines["singles_left_line"] = [[singles_offset_x, 0], [singles_offset_x, height]]
-    lines["singles_right_line"] = [
-        [width - singles_offset_x, 0],
-        [width - singles_offset_x, height],
-    ]
-
-    # Outer boundary lines (main court outline)
-    lines["outer_boundary_top"] = [[0, 0], [width, 0]]
-    lines["outer_boundary_bottom"] = [[0, height], [width, height]]
-    lines["outer_boundary_left"] = [[0, 0], [0, height]]
-    lines["outer_boundary_right"] = [[width, 0], [width, height]]
-
-    # Convert all points to the required NumPy array format (N, 1, 2)
-    # And group them for easier consumption by the client
-    all_generated_points = {}
-    for line_name, line_coords in lines.items():
-        # Each line is defined by two points [start_x, start_y], [end_x, end_y]
-        # We want to return them as a list of lists of points, where each inner list
-        # represents a segment.
-        all_generated_points[line_name] = (
-            np.array(line_coords, dtype=np.float32).reshape(-1, 2).tolist()
-        )
-
-    return all_generated_points
 
 
 @app.route("/", methods=["GET"])
@@ -201,24 +99,55 @@ def transform_badminton_court():
             jsonify({"error": "Missing 'src_points' parameter in request body. Please provide a list of 4 [x,y] points."}),
             400,
         )
-
+    # Receive 'image_frame' as base64 in addition to 'src_points'
+    # The expected payload now includes:
+    # {
+    #   "src_points": {...},
+    #   "image_frame": "..."  # base64-encoded image string
+    # }
+    if "image_frame" not in data:
+        return (
+            jsonify({"error": "Missing 'image_frame' parameter in request body. Please provide a base64-encoded image."}),
+            400,
+        )
+    
+    image_base64 = data["image_frame"]
     src_points_data = data["src_points"]
+    
 
-
-    # --- 1. Define Destination Points for the Full Court ---
-    # Standard badminton court dimensions
-    # A full badminton court is approx 13.4m x 6.1m (doubles)
-    # We'll use a proportional pixel representation.
-    # Let's define a court with width 610 pixels and height 1340 pixels for example.
-    court_width = 610
-    court_height = 1340
 
     # --- 2. Calculate Homography ---
     try:
-        response = court_homography(src_points_data)
-        return (jsonify(response),200)
+        # Decode the base64 image string to bytes
+        image_bytes = base64.b64decode(image_base64)
+        # Convert bytes to a numpy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        # Decode the numpy array to an OpenCV image (BGR format)
+        image_frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # If the image failed to decode, raise an error
+        if image_frame is None:
+            return (
+                jsonify({"error": "Failed to decode the provided base64 image."}),
+                400,
+            )
+
+        # find corners from input data and image
+        court_intersection = {}
+        for key, value in src_points_data.items():
+            print('key', key)
+            # Ensure value[0] and value[1] are integers before using as coordinates
+            x = int(value[0])
+            y = int(value[1])
+            print(x, y)
+            court_intersection[key] = find_corner(image_frame, (x, y))
+
+        print(court_intersection)
+        court_lines, corners_dict = detect_court(image_frame, corners=court_intersection)
+        print(court_lines)
+        return (jsonify(court_lines), 200)
 
     except Exception as e:
+        print(e)
         return (
             jsonify({"error": f"{e}"}),
             500,

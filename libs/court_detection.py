@@ -22,9 +22,6 @@ def find_court_lines(corners):
         actual_points.append(corners[key])
         model_points.append(reference_points[key])
     
-    print('-' * 10)
-    print(actual_points)
-    print(model_points)
     actual_points_np = np.array(actual_points, dtype=np.float32).reshape(-1, 1, 2)
     model_points_np = np.array(model_points, dtype=np.float32).reshape(-1, 1, 2)
 
@@ -139,7 +136,6 @@ def draw_court_lines(image, court_lines, color=(0, 0, 255), line_width=1, font_s
     img_with_court_lines = image.copy()
     cv2.namedWindow(window_show_court_lines)
     for line_name, line_coords in court_lines.items():
-        print(line_coords)
         cv2.line(
             img_with_court_lines, 
             tuple(line_coords[0]), 
