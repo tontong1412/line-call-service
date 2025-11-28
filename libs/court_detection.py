@@ -170,8 +170,8 @@ def detect_court(image, select_corners=False, corners=None):
         
     court_lines = find_court_lines(corners_dict)
 
-    if select_corners:
-        draw_court_lines(image, court_lines)
+    
+    draw_court_lines(image, court_lines, line_width=2)
     
     return (court_lines, corners_dict)
 

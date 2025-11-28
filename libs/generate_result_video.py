@@ -8,21 +8,17 @@ import numpy as np
 def draw_court_lines(image, court_lines, color=(0, 0, 255), line_width=1, font_scale=1):
     img_with_court_lines = image.copy()
     for line_name, line_coords in court_lines.items():
+        print(line_coords)
         cv2.line(
             img_with_court_lines, 
-            tuple(line_coords[0]), 
-            tuple(line_coords[1]), 
+            tuple((int(line_coords[0][0]),int(line_coords[0][1]))), 
+            tuple((int(line_coords[1][0]),int(line_coords[1][1]))), 
             color, 
             line_width
         )
-        cv2.putText(
-            img_with_court_lines, line_name, 
-            tuple(line_coords[1]),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            color,
-            line_width
-        )
+    return img_with_court_lines
+
+
 def draw_traj(img, traj, radius=3, color="red"):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_pil = Image.fromarray(img)
@@ -67,10 +63,10 @@ def reencode_video(input_file, output_file):
 
 def draw_ground_hit_point(frame, frame_i, decision_df):
     # circle setting
-    circle_radius = 5
+    circle_radius = 2
     out_color = (0, 0, 255)
     in_color = (0, 255, 0)
-    circle_thickness = 5
+    circle_thickness = 2
 
     # text setting
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -80,7 +76,7 @@ def draw_ground_hit_point(frame, frame_i, decision_df):
 
     for row in decision_df.itertuples(index=True, name="Frame"):
         if row.Frame <= frame_i:
-            color = in_color if row.decision == 'IN' else out_clor
+            color = in_color if row.decision == 'IN' else out_color
 
             circle_center = (int(row.X),int(row.Y))  # Center of the frame  # Center of the frame
             cv2.circle(frame, circle_center, circle_radius, color, circle_thickness)
@@ -113,6 +109,7 @@ def generate_result_video(
     video_height,
     pred_dict,
     decision,
+    court_lines,
     save_file_path,
     fps=60,
     traj_len=8,
@@ -143,10 +140,13 @@ def generate_result_video(
             if vis_pred[i]
             else pred_queue.appendleft(None)
         )
+
         # Draw prediction trajectory
         frame = draw_traj(frame, pred_queue, color="yellow")
 
         frame = draw_ground_hit_point(frame, i, decision)
+
+        frame = draw_court_lines(frame, court_lines)
 
         # Position the text slightly below and to the right of the circle
         font = cv2.FONT_HERSHEY_SIMPLEX

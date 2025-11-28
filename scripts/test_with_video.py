@@ -8,7 +8,6 @@ import time
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from tracknetv3.utils.general import generate_frames
 import cv2
 from datetime import datetime
 from tracknetv3.predict import track_ball_position
@@ -31,6 +30,31 @@ def format_time(seconds):
         minutes = int((seconds % 3600) // 60)
         secs = seconds % 60
         return f"{hours} hour(s) {minutes} minute(s) {secs:.2f} seconds"
+
+def generate_frames(video_file):
+    """Sample frames from the video.
+
+    Args:
+        video_file (str): File path of the video file
+
+    Returns:
+        frame_list (List[numpy.ndarray]): List of sampled frames
+    """
+
+    assert video_file[-4:] == ".mp4", "Invalid video file format."
+
+    # Get camera parameters
+    cap = cv2.VideoCapture(video_file)
+    frame_list = []
+    success = True
+
+    # Sample frames until video end
+    while success:
+        success, frame = cap.read()
+        if success:
+            frame_list.append(frame)
+
+    return frame_list
 
 def main():
     total_start_time = time.time()
@@ -110,6 +134,7 @@ def main():
         video_height,
         pred_dict,
         decision_df,
+        court_lines,
         file_path,
         fps=fps
     )

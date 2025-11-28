@@ -414,13 +414,6 @@ def line_judge_decision(pred_dict, court_coord):
 
 def find_ground_hit_frame(pred_dict, court_coord):
     features, num_frames = prepare_features(pred_dict)
-    # print('----------------------------------------')
-    # print(features.loc[94:355,['Frame','X','Y','vy_1','vy_inv_1','vy_inv_2','ay_1','ay_inv_1','vx_1','ax_1',]])
-
-    print('----------------------------------------')
-    # print(features.loc[626:630,['Frame','X','Y','vy_1','vy_inv_1','vy_inv_2','ay_1','ay_inv_1','vx_1','ax_1',]])
-
-    # print(features.loc[140:145,['Frame','X','Y','vy_1','vy_inv_1','vy_inv_2','ay_1','ay_inv_1','vx_1','ax_1',]])
 
     print(features.loc[47:51,['Frame','X','Y','vy_1','vy_inv_1','vy_inv_2','ay_1','ay_inv_1','vx_1','ax_1',]])
 
@@ -440,8 +433,8 @@ def find_ground_hit_frame(pred_dict, court_coord):
     ]
 
 
-    print('----------------------------------------')
-    print(bounce_frames)
+    # print('----------------------------------------')
+    # print(bounce_frames)
 
     bounce_frames = ball_below_net_pole(
         bounce_frames,
@@ -514,6 +507,15 @@ def prepare_features(pred_dict):
         }
     )
 
+    coords_to_remove = [
+        (902, 305),
+        (910, 291),
+        (912, 282),
+        (914, 268)
+    ]
+
+    labels = labels[~labels[['x-coordinate', 'y-coordinate']].apply(tuple, axis=1).isin(coords_to_remove)]
+
     num = 3
     eps = 1e-15
     for i in range(1, num):
@@ -525,7 +527,7 @@ def prepare_features(pred_dict):
         labels["y_lag_{}".format(i)] = labels["y-coordinate"].shift(i)#previous frame
         labels["y_lag_inv_{}".format(i)] = labels["y-coordinate"].shift(-i) #next frame
 
-        labels["x_diff_{}".format(i)] = labels["x-coordinate"] - labels["x_lag_{}".format(i)]
+        labels["x_diff_{}".format(i)] = (labels["x-coordinate"] - labels["x_lag_{}".format(i)])
         labels["y_diff_{}".format(i)] = labels["y-coordinate"] - labels["y_lag_{}".format(i)] 
 
         labels["x_diff_inv_{}".format(i)] = labels["x_lag_inv_{}".format(i)] - labels["x-coordinate"]
@@ -534,13 +536,13 @@ def prepare_features(pred_dict):
         labels["x_div_{}".format(i)] = labels["x_diff_{}".format(i)] / (labels["x_diff_inv_{}".format(i)] + eps)
         labels["y_div_{}".format(i)] = labels["y_diff_{}".format(i)] / (labels["y_diff_inv_{}".format(i)] + eps)
 
-        labels['vx_{}'.format(i)] = labels['x_diff_{}'.format(i)] # velocity in x direction
-        labels['vy_{}'.format(i)] = labels['y_diff_{}'.format(i)] # velocity in y direction
-        labels['vy_inv_{}'.format(i)] = labels['y_diff_inv_{}'.format(i)] # velocity in y direction (next frame)
+        labels['vx_{}'.format(i)] = labels['x_diff_{}'.format(i)] / abs(labels['Frame'] - labels['Frame'].shift(i))# velocity in x direction
+        labels['vy_{}'.format(i)] = labels['y_diff_{}'.format(i)] / abs(labels['Frame'] - labels['Frame'].shift(i))# velocity in y direction
+        labels['vy_inv_{}'.format(i)] = labels['y_diff_inv_{}'.format(i)] / abs(labels['Frame'] - labels['Frame'].shift(i))# velocity in y direction (next frame)
 
-        labels['ax_{}'.format(i)] = labels['vx_{}'.format(i)] - labels['vx_{}'.format(i)].shift(1)  #acceleration in x direction
-        labels['ay_{}'.format(i)] = labels['vy_{}'.format(i)] - labels['vy_{}'.format(i)].shift(1)  #acceleration in y direction
-        labels['ay_inv_{}'.format(i)] = labels['vy_inv_{}'.format(i)].shift(-1) - labels['vy_inv_{}'.format(i)] #acceleration in y direction (next frame)
+        labels['ax_{}'.format(i)] = (labels['vx_{}'.format(i)] - labels['vx_{}'.format(i)].shift(1))  / abs(labels['Frame'] - labels['Frame'].shift(i))#acceleration in x direction
+        labels['ay_{}'.format(i)] = (labels['vy_{}'.format(i)] - labels['vy_{}'.format(i)].shift(1))  / abs(labels['Frame'] - labels['Frame'].shift(i))#acceleration in y direction
+        labels['ay_inv_{}'.format(i)] = (labels['vy_inv_{}'.format(i)].shift(-1) - labels['vy_inv_{}'.format(i)] )/ abs(labels['Frame'] - labels['Frame'].shift(i))#acceleration in y direction (next frame)
 
 
     for i in range(1, num):
@@ -571,6 +573,7 @@ def prepare_features(pred_dict):
     colnames = colnames_general + colnames_x + colnames_y
 
     features = labels[colnames]
+    features.to_csv("cleaned_file_feature.csv", index=False)
     return features, list(labels["frame"])
 
 

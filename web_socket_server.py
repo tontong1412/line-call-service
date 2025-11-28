@@ -8,6 +8,10 @@ import cv2  # For OpenCV processing
 import numpy as np  # For numerical operations with OpenCV
 from tracknetv3.predict import track_ball_position
 from datetime import datetime
+from libs.generate_result_video import generate_result_video
+from libs.process_data import mark_default_shuttlecock_position
+from libs.line_decision import line_judge_decision
+
 
 # --- Configuration ---
 WEBSOCKET_HOST = "0.0.0.0"  # Listen on all available interfaces
@@ -46,24 +50,19 @@ async def image_stream_handler(websocket):
                     #     f"Received metadata from {client_address}: {current_metadata}"
                     # )
                 except json.JSONDecodeError:
-                    print(
-                        f"Received malformed JSON metadata from {client_address}: {message}"
-                    )
+                    print(f"Received malformed JSON metadata from {client_address}: {message}")
             elif isinstance(message, bytes):
                 # Assume binary messages are JPEG image data
                 if current_metadata:
                     frame_number = current_metadata.get("frame_number", "N/A")
-                    timestamp_ms = current_metadata.get(
-                        "timestamp", 0
-                    )  # Milliseconds since epoch
+                    timestamp_ms = current_metadata.get("timestamp", 0)  # Milliseconds since epoch
                     width = current_metadata.get("width", "N/A")
                     height = current_metadata.get("height", "N/A")
                     size_bytes = len(message)
                     total_frame = current_metadata.get("total_frame", "N/A")
+                    framerate = current_metadata.get("framerate", 30)
 
-                    print(
-                        f"[{client_address}] Frame {frame_number}/{total_frame-1} (W:{width}, H:{height}, Size:{size_bytes} bytes)"
-                    )
+                    print(f"[{client_address}] Frame {frame_number}/{total_frame-1} (W:{width}, H:{height}, Size:{size_bytes} bytes)")
 
                     np_array = np.frombuffer(message, np.uint8)
                     image_array = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
@@ -76,15 +75,27 @@ async def image_stream_handler(websocket):
                             court_coord = current_metadata.get("court_coord", {})
                             court_corners = current_metadata.get("court_corners", {})
                             filename = datetime.now().strftime("%m_%d_%Y_%H:%M:%S")
-                            track_ball_position(
+                            pred_dict = track_ball_position(
                                 frame_list,
                                 width,
                                 height,
                                 filename,
-                                batch_size=8,
-                                court_coord=court_coord,
-                                court_corners=court_corners,
+                                batch_size=8
                             )
+                            pred_dict = mark_default_shuttlecock_position(pred_dict)
+                            decision_df = line_judge_decision(pred_dict, court_coord, f"prediction/{filename}_plot.png")
+                            file_path = f"prediction/{filename}.mp4"
+                            generate_result_video(
+                                frame_list,
+                                width,
+                                height,
+                                pred_dict,
+                                decision_df,
+                                court_coord,
+                                file_path,
+                                fps=framerate
+                            )
+
                             print("done tracking")
                             CHUNK_SIZE = 1024 * 64  # 64KB
                             print("start streaming video")

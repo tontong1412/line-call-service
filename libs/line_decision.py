@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
 
 # Handle both relative import (when used as module) and absolute import (when run directly)
 try:
@@ -59,6 +60,7 @@ def plot_ground_hit_data(features, gh_candidates, gh_below_net_pole, gh_ground_t
     
     # Plot Y Position (only) in first graph
     ax1.plot(features["Frame"], features["Y"], label="Y Position", color="blue", marker='o', markersize=3)
+    ax1.invert_yaxis()
     if not gh_candidates.empty:
         ax1.scatter(gh_candidates["Frame"], gh_candidates["Y"], color="red", zorder=5, label="Ground Hit Frame Candidate(s) (Y)")
         for f in gh_candidates["Frame"]:
@@ -156,29 +158,23 @@ def line_judge_decision(pred_dict, court_lines=None, save_plot=None, ground_hit_
 
     plot_ground_hit_data(features, gh_candidates, gh_below_net_pole, ground_hit_frame, save_plot)
 
-    # doubles match - extract corner points from boundary lines
-    # Each boundary line is a list of two points: [[x1, y1], [x2, y2]]
-    # b0: top boundary, b1: bottom boundary, d0: left boundary, d1: right boundary
-    b0 = court_lines['b0']  # top boundary
-    b1 = court_lines['b1']  # bottom boundary
-    d0 = court_lines['d0']  # left boundary
-    d1 = court_lines['d1']  # right boundary
+    # Doubles court polygon
+    # b0 = court_lines['b0']  # top boundary
+    # b1 = court_lines['b1']  # bottom boundary
     
-    # Convert to numpy arrays for easier manipulation
-    b0_arr = np.array(b0)
-    b1_arr = np.array(b1)
-    d0_arr = np.array(d0)
-    d1_arr = np.array(d1)
+    # top_left = b0[0]
+    # top_right= b0[1]
+    # bottom_left = b1[0]
+    # bottom_right = b1[1]
+
+    # Singles court polygon
+    s0 = court_lines['s0']  # top boundary
+    s1 = court_lines['s1']  # bottom boundary
     
-    # Extract the 4 corners of the rectangular court polygon
-    # Top-left: min x from left boundary, min y from top boundary
-    top_left = [float(min(d0_arr[:, 0])), float(min(b0_arr[:, 1]))]
-    # Top-right: max x from right boundary, min y from top boundary
-    top_right = [float(max(d1_arr[:, 0])), float(min(b0_arr[:, 1]))]
-    # Bottom-right: max x from right boundary, max y from bottom boundary
-    bottom_right = [float(max(d1_arr[:, 0])), float(max(b1_arr[:, 1]))]
-    # Bottom-left: min x from left boundary, max y from bottom boundary
-    bottom_left = [float(min(d0_arr[:, 0])), float(max(b1_arr[:, 1]))]
+    top_left = s0[0]
+    top_right= s1[0]
+    bottom_left = s0[1]
+    bottom_right = s1[1]
     
     # Define polygon vertices in counter-clockwise order
     court_polygon = [
@@ -195,6 +191,37 @@ def line_judge_decision(pred_dict, court_lines=None, save_plot=None, ground_hit_
         "IN" if check_landing_inside_court((row['X'], row['Y']), court_polygon) else "OUT"
         for idx, row in gh_below_net_pole.iterrows()
     ]
+
+    # Plot the court polygon and ground hit positions
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(8, 8))
+    court_poly_np = [court_polygon + [court_polygon[0]]]  # close the loop for the polygon
+    court_xs = [pt[0] for pt in court_poly_np[0]]
+    court_ys = [pt[1] for pt in court_poly_np[0]]
+
+    plt.plot(court_xs, court_ys, 'b-', label='Court Polygon')
+
+    # Plot ground hit positions with decision
+    in_positions = ground_hit_candidate_with_decision[ground_hit_candidate_with_decision['decision'] == "IN"]
+    out_positions = ground_hit_candidate_with_decision[ground_hit_candidate_with_decision['decision'] == "OUT"]
+
+    plt.scatter(in_positions['X'], in_positions['Y'], c='g', label='IN', marker='o', s=60, zorder=3)
+    plt.scatter(out_positions['X'], out_positions['Y'], c='r', label='OUT', marker='x', s=60, zorder=3)
+
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.gca().invert_yaxis()
+    plt.legend()
+    plt.title("Court Polygon and Ground Hit Positions")
+
+    if save_plot is not None:
+        plt.savefig(save_plot.replace('.png','polygon.png'), bbox_inches='tight')
+    else:
+        plt.show()
+    plt.close()
+
+    
 
     return ground_hit_candidate_with_decision
 

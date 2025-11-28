@@ -15,16 +15,23 @@ reference_points = {
     's1': [singles_offset_x + line_width, net_y + short_service_y], # single short service line left
     's2': [court_width - singles_offset_x - line_width, net_y + short_service_y], # single short service line right
     's3': [court_width - line_width, net_y + short_service_y], # double short service line right
+    's4': [(court_width - line_width) / 2, net_y + short_service_y + line_width], # double short service line center left
+    's5': [(court_width + line_width) / 2, net_y + short_service_y + line_width], # double short service line center right
     # long service line points
     'l0': [line_width, court_height - long_service_y_from_boundary - line_width], # double long service line left
     'l1': [singles_offset_x + line_width, court_height - long_service_y_from_boundary - line_width], # single long service line left
     'l2': [court_width - singles_offset_x - line_width, court_height - long_service_y_from_boundary - line_width], # single long service line right
     'l3': [court_width - line_width, court_height - long_service_y_from_boundary - line_width], # double long service line right
+    'l4': [(court_width - line_width) / 2, court_height - long_service_y_from_boundary - line_width], # double long service line center left
+    'l5': [(court_width + line_width) / 2, court_height - long_service_y_from_boundary - line_width], # double long service line center right
     # back boundary points
     'b0': [line_width, court_height - line_width], # double back boundary left
     'b1': [singles_offset_x + line_width, court_height - line_width], # single back boundary left
     'b2': [court_width - singles_offset_x - line_width, court_height - line_width], # single back boundary right
     'b3': [court_width -line_width, court_height - line_width], # double back boundary right
+    'b4': [(court_width - line_width) / 2, court_height - line_width], # double back boundary center left
+    'b5': [(court_width + line_width) / 2, court_height - line_width], # double back boundary center right
+    
 }
 
 reference_lines = {
@@ -33,8 +40,10 @@ reference_lines = {
     'd1': [[court_width, 0], [court_width, court_height]],
     's0': [[singles_offset_x, 0], [singles_offset_x, court_height]],
     's1': [[court_width - singles_offset_x, 0], [court_width - singles_offset_x, court_height]],
-    'c0': [[(court_width - line_width) / 2, 0], [(court_width - line_width) / 2, court_height]],
-    'c1': [[(court_width + line_width) / 2, 0], [(court_width + line_width) / 2, court_height]],
+    'ct0': [[(court_width - line_width) / 2, 0], [(court_width - line_width) / 2, court_height / 2 - short_service_y]],
+    'ct1': [[(court_width - line_width) / 2, 0], [(court_width - line_width) / 2, court_height / 2 - short_service_y]],
+    'cb0': [[(court_width + line_width) / 2, court_height], [(court_width + line_width) / 2, court_height / 2 + short_service_y]],
+    'cb1': [[(court_width + line_width) / 2, court_height], [(court_width + line_width) / 2, court_height / 2 + short_service_y]],
     # horizontal lines, b=back, l=long, sh=short, n=net
     'b0': [[0, 0], [court_width, 0]],
     'b1': [[0, court_height], [court_width, court_height]],
